@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Centro TMS – Employee</title>
+  <meta name="theme-color" content="#6366f1">
+  <link rel="manifest" href="employee-manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- QR Code -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <!-- Zoho Creator SDK (injected automatically in Creator Pages context) -->
+  <script src="https://js.zohostatic.com/creator/widgets/version/1/widgetsdk.js"></script>
+
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --surface: #1e1b4b;
+      --card: #312e81;
+      --text: #e0e7ff;
+      --muted: #a5b4fc;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --eco-green: #22c55e;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { background: #0f0e2a; color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; overflow-x: hidden; }
+    .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; background: rgba(30,27,75,0.95); backdrop-filter: blur(12px); border-top: 1px solid rgba(99,102,241,0.2); padding-bottom: env(safe-area-inset-bottom); }
+    .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0; cursor: pointer; transition: all 0.2s; color: var(--muted); font-size: 0.65rem; font-weight: 500; border: none; background: none; }
+    .tab-btn.active { color: var(--primary); }
+    .tab-btn svg { width: 22px; height: 22px; transition: transform 0.2s; }
+    .tab-btn.active svg { transform: translateY(-2px); }
+    .screen { display: none; min-height: calc(100vh - 72px); padding: 16px 16px 80px; }
+    .screen.active { display: block; }
+    .card { background: var(--card); border-radius: 16px; padding: 16px; border: 1px solid rgba(99,102,241,0.2); margin-bottom: 12px; }
+    .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; border: none; border-radius: 12px; padding: 14px 24px; font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%; transition: opacity 0.2s, transform 0.1s; }
+    .btn-primary:active { transform: scale(0.97); opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+    .badge-success { background: rgba(16,185,129,0.2); color: var(--success); }
+    .badge-warning { background: rgba(245,158,11,0.2); color: var(--warning); }
+    .badge-danger { background: rgba(239,68,68,0.2); color: var(--danger); }
+    .eco-ring { width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; position: relative; }
+    .eco-ring::before { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 4px solid rgba(34,197,94,0.2); }
+    .eco-ring-fill { position: absolute; inset: 0; border-radius: 50%; border: 4px solid var(--eco-green); clip-path: inset(0 0 0 0); }
+    #live-map { height: 300px; border-radius: 16px; overflow: hidden; }
+    .trip-card { background: linear-gradient(135deg, var(--primary) 0%, #7c3aed 100%); border-radius: 16px; padding: 20px; margin-bottom: 12px; }
+    .slot-card { border: 2px solid rgba(99,102,241,0.3); border-radius: 14px; padding: 14px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; background: rgba(99,102,241,0.05); }
+    .slot-card:hover, .slot-card.selected { border-color: var(--primary); background: rgba(99,102,241,0.15); }
+    .slot-card.full { opacity: 0.5; cursor: not-allowed; border-color: rgba(239,68,68,0.3); }
+    .chat-bubble-user { background: var(--primary); color: white; border-radius: 18px 18px 4px 18px; padding: 10px 14px; max-width: 80%; margin-left: auto; font-size: 0.9rem; }
+    .chat-bubble-ai { background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3); color: var(--text); border-radius: 18px 18px 18px 4px; padding: 10px 14px; max-width: 80%; font-size: 0.9rem; }
+    .chat-typing { display: flex; align-items: center; gap: 4px; padding: 10px 14px; }
+    .chat-typing span { width: 6px; height: 6px; background: var(--muted); border-radius: 50%; animation: bounce 1.2s infinite; }
+    .chat-typing span:nth-child(2) { animation-delay: 0.2s; }
+    .chat-typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+    .leaderboard-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(99,102,241,0.1); }
+    .rank-badge { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; }
+    .rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1a1a1a; }
+    .rank-2 { background: linear-gradient(135deg, #94a3b8, #64748b); color: white; }
+    .rank-3 { background: linear-gradient(135deg, #cd7c2f, #a36020); color: white; }
+    .rank-n { background: rgba(99,102,241,0.2); color: var(--muted); }
+    .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #1e1b4b; border: 1px solid var(--primary); border-radius: 12px; padding: 12px 20px; z-index: 9999; font-size: 0.9rem; min-width: 260px; text-align: center; transition: all 0.3s; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+    .lang-toggle { position: absolute; top: 12px; right: 16px; display: flex; align-items: center; gap: 4px; background: rgba(99,102,241,0.2); border-radius: 20px; padding: 4px 10px; cursor: pointer; font-size: 0.8rem; border: none; color: var(--muted); }
+    .progress-bar { height: 8px; background: rgba(99,102,241,0.2); border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--eco-green), #16a34a); border-radius: 4px; transition: width 0.6s ease; }
+    .qr-container { background: white; border-radius: 16px; padding: 16px; display: flex; align-items: center; justify-content: center; }
+    [dir="rtl"] { text-align: right; }
+    [dir="rtl"] .chat-bubble-user { margin-left: 0; margin-right: auto; border-radius: 18px 18px 18px 4px; }
+    [dir="rtl"] .chat-bubble-ai { border-radius: 18px 18px 4px 18px; }
+    .skeleton { background: linear-gradient(90deg, rgba(99,102,241,0.1) 25%, rgba(99,102,241,0.2) 50%, rgba(99,102,241,0.1) 75%); background-size: 200% 100%; animation: skeleton-load 1.4s infinite; border-radius: 8px; }
+    @keyframes skeleton-load { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .pulse-dot { width: 8px; height: 8px; background: var(--success); border-radius: 50%; animation: pulse-anim 2s infinite; }
+    @keyframes pulse-anim { 0%,100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); } 50% { box-shadow: 0 0 0 8px rgba(16,185,129,0); } }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header style="position:sticky;top:0;z-index:50;background:rgba(15,14,42,0.95);backdrop-filter:blur(12px);border-bottom:1px solid rgba(99,102,241,0.15);padding:12px 16px 12px;display:flex;align-items:center;justify-content:space-between;">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div style="width:36px;height:36px;background:linear-gradient(135deg,#6366f1,#7c3aed);border-radius:10px;display:flex;align-items:center;justify-content:center;">
+      <svg width="20" height="20" fill="white" viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>
+    </div>
+    <div>
+      <div style="font-size:0.85rem;font-weight:700;color:white;" id="greeting-text">Good Morning</div>
+      <div style="font-size:0.75rem;color:var(--muted);" id="user-name-header">Loading...</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div class="pulse-dot" id="conn-indicator" title="Connected"></div>
+    <button class="lang-toggle" onclick="toggleLanguage()" id="lang-btn">
+      <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12.87 15.07l-2.54-2.51.03-.03A17.52 17.52 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>
+      <span id="lang-label">AR</span>
+    </button>
+    <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#7c3aed);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9rem;" id="avatar">?</div>
+  </div>
+</header>
+
+<!-- Screens -->
+<div id="screen-home" class="screen active">
+  <!-- Active booking alert -->
+  <div id="active-booking-banner" style="display:none;" class="trip-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <span style="font-size:0.8rem;font-weight:600;color:rgba(255,255,255,0.7);">YOUR ACTIVE TRIP</span>
+      <div class="pulse-dot"></div>
+    </div>
+    <div style="font-size:1.1rem;font-weight:700;" id="active-route">Route: --</div>
+    <div style="font-size:0.85rem;color:rgba(255,255,255,0.8);margin-top:4px;" id="active-depart">Departs: --</div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn-primary" style="flex:1;padding:10px;" onclick="showScreen('map')">
+        <svg width="16" height="16" fill="white" viewBox="0 0 24 24" style="display:inline;margin-right:4px;"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5z"/></svg>
+        Track Bus
+      </button>
+      <button class="btn-primary" style="flex:1;padding:10px;background:rgba(255,255,255,0.2);" onclick="showScreen('qr')">
+        <svg width="16" height="16" fill="white" viewBox="0 0 24 24" style="display:inline;margin-right:4px;"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zm-14 4H3v8h8v-8H5zm-2 6H5v-4h4v4zm10 2h2v2h-2zm-4-4h2v2h-2zm2 2h2v2h-2zm0-4h2v2h-2zm2 2h2v2h-2zm2-2h2v2h-2zm0 4h2v2h-2zm-4 2h2v2h-2z"/></svg>
+        QR Pass
+      </button>
+    </div>
+  </div>
+
+  <!-- Available Slots -->
+  <div style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+    <h2 style="font-size:1rem;font-weight:700;color:white;">Available Trips</h2>
+    <button onclick="loadTrips()" style="background:none;border:none;color:var(--muted);font-size:0.8rem;cursor:pointer;">Refresh</button>
+  </div>
+
+  <div id="trips-loading" style="display:none;">
+    <div class="skeleton" style="height:80px;margin-bottom:10px;"></div>
+    <div class="skeleton" style="height:80px;margin-bottom:10px;"></div>
+    <div class="skeleton" style="height:80px;"></div>
+  </div>
+
+  <div id="trips-list"></div>
+
+  <div id="trips-empty" style="display:none;text-align:center;padding:40px 20px;">
+    <svg width="48" height="48" fill="var(--muted)" viewBox="0 0 24 24" style="margin:0 auto 12px;display:block;"><path d="M4 16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v8zm2-8h12v8H6V8zm6-6C6.48 2 2 6.48 2 12h2c0-4.42 3.58-8 8-8s8 3.58 8 8h2c0-5.52-4.48-10-10-10z"/></svg>
+    <p style="color:var(--muted);font-size:0.9rem;" data-en="No active trips available" data-ar="لا توجد رحلات متاحة حالياً">No active trips available</p>
+  </div>
+
+  <!-- Quick Stats -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;">
+    <div class="card" style="text-align:center;">
+      <div style="font-size:1.4rem;font-weight:700;color:var(--eco-green);" id="stat-trips">0</div>
+      <div style="font-size:0.75rem;color:var(--muted);" data-en="Trips This Month" data-ar="رحلات هذا الشهر">Trips This Month</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:1.4rem;font-weight:700;color:var(--primary);" id="stat-co2">0 kg</div>
+      <div style="font-size:0.75rem;color:var(--muted);" data-en="CO₂ Saved" data-ar="ثاني أكسيد الكربون المُوفَّر">CO₂ Saved</div>
+    </div>
+  </div>
+</div>
+
+<!-- Map Screen -->
+<div id="screen-map" class="screen">
+  <div style="margin-bottom:12px;">
+    <h2 style="font-size:1rem;font-weight:700;color:white;margin-bottom:4px;">Live Bus Tracking</h2>
+    <div style="font-size:0.8rem;color:var(--muted);" id="map-subtitle">Tracking your booked bus in real-time</div>
+  </div>
+  <div id="live-map"></div>
+  <div class="card" style="margin-top:12px;display:flex;align-items:center;gap:12px;">
+    <div style="width:44px;height:44px;background:rgba(99,102,241,0.2);border-radius:12px;display:flex;align-items:center;justify-content:center;">
+      <svg width="24" height="24" fill="var(--primary)" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+    </div>
+    <div>
+      <div style="font-size:0.85rem;font-weight:600;color:white;" id="bus-eta">Calculating ETA...</div>
+      <div style="font-size:0.75rem;color:var(--muted);" id="bus-coords">Waiting for GPS signal</div>
+    </div>
+    <div class="pulse-dot" id="tracking-dot" style="margin-left:auto;"></div>
+  </div>
+  <div class="card">
+    <div style="font-size:0.85rem;font-weight:600;color:white;margin-bottom:10px;">Route Progress</div>
+    <div class="progress-bar"><div class="progress-fill" id="route-progress" style="width:0%"></div></div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.75rem;color:var(--muted);">
+      <span id="route-origin">Origin</span>
+      <span id="route-pct">0%</span>
+      <span id="route-dest">Destination</span>
+    </div>
+  </div>
+</div>
+
+<!-- QR Screen -->
+<div id="screen-qr" class="screen" style="display:flex;flex-direction:column;align-items:center;padding-top:24px;">
+  <h2 style="font-size:1rem;font-weight:700;color:white;margin-bottom:4px;align-self:flex-start;">Digital Boarding Pass</h2>
+  <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px;align-self:flex-start;">Show this to your driver at boarding</p>
+
+  <div id="qr-no-booking" style="text-align:center;padding:40px 20px;display:none;">
+    <svg width="48" height="48" fill="var(--muted)" viewBox="0 0 24 24" style="margin:0 auto 12px;display:block;"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zm-14 4H3v8h8v-8H5zm-2 6H5v-4h4v4zm10 2h2v2h-2zm-4-4h2v2h-2zm2 2h2v2h-2zm0-4h2v2h-2zm2 2h2v2h-2zm2-2h2v2h-2zm0 4h2v2h-2zm-4 2h2v2h-2z"/></svg>
+    <p style="color:var(--muted);font-size:0.9rem;">No active booking. Book a trip first.</p>
+    <button class="btn-primary" style="max-width:200px;margin-top:16px;" onclick="showScreen('home')">Book Now</button>
+  </div>
+
+  <div id="qr-pass" style="width:100%;max-width:340px;">
+    <div style="background:linear-gradient(135deg,#1e1b4b,#312e81);border:1px solid rgba(99,102,241,0.4);border-radius:20px;padding:20px;margin-bottom:16px;">
+      <!-- Boarding pass header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--muted);letter-spacing:1px;">CENTRO TMS</div>
+        <div class="badge badge-success" id="pass-status-badge">CONFIRMED</div>
+      </div>
+      <!-- Route info -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="text-align:center;">
+          <div style="font-size:1.2rem;font-weight:700;color:white;" id="pass-origin">HQ</div>
+          <div style="font-size:0.7rem;color:var(--muted);">FROM</div>
+        </div>
+        <svg width="40" height="16" fill="var(--primary)" viewBox="0 0 40 16"><path d="M25 2l10 6-10 6V2zm-12 5H0v2h13z"/></svg>
+        <div style="text-align:center;">
+          <div style="font-size:1.2rem;font-weight:700;color:white;" id="pass-dest">--</div>
+          <div style="font-size:0.7rem;color:var(--muted);">TO</div>
+        </div>
+      </div>
+      <!-- Passenger info -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;padding:10px;background:rgba(0,0,0,0.2);border-radius:10px;">
+        <div><div style="font-size:0.65rem;color:var(--muted);">PASSENGER</div><div style="font-size:0.85rem;font-weight:600;" id="pass-name">--</div></div>
+        <div><div style="font-size:0.65rem;color:var(--muted);">HITS ID</div><div style="font-size:0.85rem;font-weight:600;" id="pass-hitsid">--</div></div>
+        <div><div style="font-size:0.65rem;color:var(--muted);">DEPARTURE</div><div style="font-size:0.85rem;font-weight:600;" id="pass-time">--</div></div>
+        <div><div style="font-size:0.65rem;color:var(--muted);">BUS</div><div style="font-size:0.85rem;font-weight:600;" id="pass-bus">--</div></div>
+      </div>
+      <!-- QR Code -->
+      <div class="qr-container">
+        <canvas id="qr-canvas" width="180" height="180"></canvas>
+      </div>
+      <div style="text-align:center;margin-top:10px;font-size:0.7rem;color:var(--muted);font-family:monospace;" id="qr-hash-display">QR-XXXXXXXX</div>
+    </div>
+  </div>
+</div>
+
+<!-- Eco Screen -->
+<div id="screen-eco" class="screen">
+  <h2 style="font-size:1rem;font-weight:700;color:white;margin-bottom:16px;">Eco Impact Dashboard</h2>
+
+  <!-- Main eco card -->
+  <div class="card" style="text-align:center;padding:24px;">
+    <div style="position:relative;width:120px;height:120px;margin:0 auto 16px;">
+      <svg width="120" height="120" style="transform:rotate(-90deg);position:absolute;top:0;left:0;">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(34,197,94,0.15)" stroke-width="10"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#22c55e" stroke-width="10" stroke-dasharray="327" id="eco-circle" stroke-dashoffset="327" stroke-linecap="round"/>
+      </svg>
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="font-size:1.4rem;font-weight:700;color:var(--eco-green);" id="eco-total">0</div>
+        <div style="font-size:0.65rem;color:var(--muted);">kg CO₂</div>
+      </div>
+    </div>
+    <div style="font-size:1rem;font-weight:600;color:white;" id="eco-level-name">Eco Starter</div>
+    <div style="font-size:0.8rem;color:var(--muted);margin-top:4px;" id="eco-level-desc">Keep riding to level up!</div>
+    <div class="progress-bar" style="margin-top:12px;">
+      <div class="progress-fill" id="eco-level-progress" style="width:0%"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.7rem;color:var(--muted);">
+      <span id="eco-pts-current">0 pts</span>
+      <span id="eco-pts-next">500 pts to next level</span>
+    </div>
+  </div>
+
+  <!-- Stats grid -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+    <div class="card" style="text-align:center;padding:12px;">
+      <div style="font-size:1.1rem;font-weight:700;color:#34d399;" id="eco-trees">0</div>
+      <div style="font-size:0.65rem;color:var(--muted);">🌳 Trees Equiv.</div>
+    </div>
+    <div class="card" style="text-align:center;padding:12px;">
+      <div style="font-size:1.1rem;font-weight:700;color:#60a5fa;" id="eco-km">0</div>
+      <div style="font-size:0.65rem;color:var(--muted);">km Driven</div>
+    </div>
+    <div class="card" style="text-align:center;padding:12px;">
+      <div style="font-size:1.1rem;font-weight:700;color:#f472b6;" id="eco-rank">#--</div>
+      <div style="font-size:0.65rem;color:var(--muted);">My Rank</div>
+    </div>
+  </div>
+
+  <!-- Leaderboard -->
+  <div class="card">
+    <div style="font-size:0.9rem;font-weight:700;color:white;margin-bottom:12px;">🏆 Company Leaderboard</div>
+    <div id="leaderboard-list">
+      <div class="skeleton" style="height:44px;margin-bottom:6px;"></div>
+      <div class="skeleton" style="height:44px;margin-bottom:6px;"></div>
+      <div class="skeleton" style="height:44px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- AI Chat Screen -->
+<div id="screen-ai" class="screen" style="display:flex;flex-direction:column;height:calc(100vh - 140px);">
+  <div style="margin-bottom:12px;">
+    <h2 style="font-size:1rem;font-weight:700;color:white;">AI Booking Agent</h2>
+    <p style="font-size:0.78rem;color:var(--muted);">Chat naturally to book your ride</p>
+  </div>
+
+  <div id="chat-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-bottom:8px;">
+    <div class="chat-bubble-ai">
+      👋 Hi! I'm your Centro AI Agent. Tell me where and when you need a ride. Try: <em>"Book me to Dropoff 1 tomorrow at 8 AM"</em>
+    </div>
+  </div>
+
+  <!-- Voice + text input -->
+  <div style="display:flex;gap:8px;padding:8px 0;align-items:center;background:#0f0e2a;padding-bottom:4px;">
+    <button id="voice-btn" onclick="toggleVoice()" style="width:44px;height:44px;border-radius:50%;background:rgba(99,102,241,0.2);border:2px solid rgba(99,102,241,0.4);color:var(--primary);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
+      <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.49 6-3.31 6-6.72h-1.7z"/></svg>
+    </button>
+    <input type="text" id="chat-input" placeholder="Type your booking request..." style="flex:1;background:rgba(99,102,241,0.1);border:1px solid rgba(99,102,241,0.3);border-radius:24px;padding:10px 16px;color:white;font-size:0.9rem;outline:none;">
+    <button onclick="sendAIMessage()" style="width:44px;height:44px;border-radius:50%;background:var(--primary);border:none;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+      <svg width="20" height="20" fill="white" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Bottom Tab Bar -->
+<nav class="tab-bar" style="display:flex;">
+  <button class="tab-btn active" onclick="showScreen('home')" id="tab-home">
+    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+    <span data-en="Home" data-ar="الرئيسية">Home</span>
+  </button>
+  <button class="tab-btn" onclick="showScreen('map')" id="tab-map">
+    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5z"/></svg>
+    <span data-en="Track" data-ar="تتبع">Track</span>
+  </button>
+  <button class="tab-btn" onclick="showScreen('qr')" id="tab-qr">
+    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zm-14 4H3v8h8v-8H5zm-2 6H5v-4h4v4zm10 2h2v2h-2zm-4-4h2v2h-2zm2 2h2v2h-2zm0-4h2v2h-2zm2 2h2v2h-2zm2-2h2v2h-2zm0 4h2v2h-2zm-4 2h2v2h-2z"/></svg>
+    <span data-en="Pass" data-ar="تذكرة">Pass</span>
+  </button>
+  <button class="tab-btn" onclick="showScreen('eco')" id="tab-eco">
+    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M17 8C8 10 5.9 16.17 3.82 21L5.71 22l1-2.3A4.49 4.49 0 0 0 8 20C19 20 22 3 22 3c-1 2-8 2-8 2h-1l4 3z"/></svg>
+    <span data-en="Eco" data-ar="بيئة">Eco</span>
+  </button>
+  <button class="tab-btn" onclick="showScreen('ai')" id="tab-ai">
+    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+    <span data-en="AI Chat" data-ar="ذكاء اصطناعي">AI Chat</span>
+  </button>
+</nav>
+
+<!-- Toast -->
+<div id="toast" class="toast" style="display:none;"></div>
+
+<!-- Booking Modal -->
+<div id="booking-modal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);">
+  <div style="position:absolute;bottom:0;left:0;right:0;background:#1e1b4b;border-radius:24px 24px 0 0;padding:24px;border-top:1px solid rgba(99,102,241,0.3);">
+    <div style="width:40px;height:4px;background:rgba(99,102,241,0.3);border-radius:2px;margin:0 auto 20px;"></div>
+    <h3 style="font-size:1.1rem;font-weight:700;color:white;margin-bottom:4px;" id="modal-title">Confirm Booking</h3>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:20px;" id="modal-subtitle">Review trip details before confirming</p>
+    <div id="modal-details" class="card" style="margin-bottom:16px;"></div>
+    <button class="btn-primary" onclick="confirmBooking()" id="confirm-btn">Confirm & Book</button>
+    <button onclick="closeBookingModal()" style="width:100%;padding:12px;background:none;border:none;color:var(--muted);cursor:pointer;margin-top:8px;font-size:0.9rem;">Cancel</button>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// CONFIGURATION
+// ─────────────────────────────────────────────
+const APP_CONFIG = {
+  accountOwner: 'centrocdx',
+  appName: 'transportation-app',
+  forms: {
+    trips: 'Active_Timings',
+    bookings: 'Bookings',
+    employees: 'Employee_Registration',
+    trackingLogs: 'Live_Tracking_Logs',
+    heatmap: 'Heatmap_Data',
+  },
+  reports: {
+    trips: 'All_Active_Timings',
+    bookings: 'All_TMS_Bookings',
+    employees: 'All_Employee_Registrations',
+    leaderboard: 'Eco_Leaderboard',
+    trackingLogs: 'All_Live_Tracking_Logs',
+  },
+  aiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+  aiKey: 'YOUR_GEMINI_API_KEY', // Replace with your key or use Zoho Flow proxy
+  co2PerKm: 0.21, // kg CO2 per km average car emission offset
+  avgRouteKm: 25,  // average route distance in km (Cairo metro area)
+};
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let state = {
+  currentUser: null,
+  activeBooking: null,
+  selectedTrip: null,
+  trips: [],
+  myBookings: [],
+  leaderboard: [],
+  lang: 'en',
+  map: null,
+  busMarker: null,
+  trackingInterval: null,
+  voiceActive: false,
+  recognition: null,
+};
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+ZOHO.CREATOR.init().then(() => {
+  return ZOHO.CREATOR.UTIL.getInitParams();
+}).then(params => {
+  state.currentUser = params.loginUser || { email: '', name: 'User', id: '' };
+  initUI();
+  loadUserProfile();
+  loadTrips();
+  loadMyBookings();
+  initMap();
+}).catch(() => {
+  // Fallback for development/preview mode
+  state.currentUser = { email: 'demo@centro.com', name: 'Demo User', id: 'demo-001', hits_id: 'EMP-001' };
+  initUI();
+  loadTrips();
+  loadMyBookings();
+  initMap();
+});
+
+function initUI() {
+  const hour = new Date().getHours();
+  const greetings = {
+    en: hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening',
+    ar: hour < 12 ? 'صباح الخير' : hour < 17 ? 'مساء الخير' : 'مساء النور',
+  };
+  document.getElementById('greeting-text').textContent = greetings[state.lang];
+  const name = state.currentUser?.name || 'User';
+  document.getElementById('user-name-header').textContent = name;
+  document.getElementById('avatar').textContent = name.charAt(0).toUpperCase();
+}
+
+// ─────────────────────────────────────────────
+// DATA LOADING
+// ─────────────────────────────────────────────
+async function loadUserProfile() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.employees,
+      criteria: `Email == "${state.currentUser.email}"`,
+    });
+    if (resp.code === 3000 && resp.data?.length) {
+      const emp = resp.data[0];
+      state.currentUser.hitsId = emp.HITS_ID;
+      state.currentUser.co2Saved = parseFloat(emp.CO2_Total_Saved || 0);
+      state.currentUser.ecoPoints = parseInt(emp.Eco_Points || 0);
+      updateEcoUI();
+    }
+  } catch (e) { console.warn('Profile load skipped:', e); }
+}
+
+async function loadTrips() {
+  const list = document.getElementById('trips-list');
+  const loading = document.getElementById('trips-loading');
+  const empty = document.getElementById('trips-empty');
+  list.innerHTML = '';
+  loading.style.display = 'block';
+  empty.style.display = 'none';
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.trips,
+      criteria: 'Status == "Active"',
+    });
+    loading.style.display = 'none';
+    if (resp.code === 3000 && resp.data?.length) {
+      state.trips = resp.data;
+      renderTrips(resp.data);
+    } else {
+      // Fallback to Bus_Schedule (existing form)
+      loadBusSchedules();
+    }
+  } catch (e) {
+    loading.style.display = 'none';
+    loadBusSchedules();
+  }
+}
+
+async function loadBusSchedules() {
+  const list = document.getElementById('trips-list');
+  const empty = document.getElementById('trips-empty');
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: 'All_Bus_Schedules',
+    });
+    if (resp.code === 3000 && resp.data?.length) {
+      state.trips = resp.data;
+      renderTrips(resp.data, true);
+    } else {
+      empty.style.display = 'block';
+    }
+  } catch (e) {
+    document.getElementById('trips-empty').style.display = 'block';
+  }
+}
+
+function renderTrips(trips, isLegacy = false) {
+  const list = document.getElementById('trips-list');
+  list.innerHTML = '';
+  trips.forEach((trip, i) => {
+    const seats = isLegacy ? parseInt(trip.Number_of_Seats || 0) : parseInt(trip.Available_Seats || 0);
+    const isFull = seats === 0;
+    const depart = isLegacy ? `${trip.Available_From} → ${trip.Available_To}` : trip.Departure_Time;
+    const route = isLegacy ? trip.Dropoff_Point : trip.Route;
+    const busCode = isLegacy ? trip.Bus_Code : (trip.Bus?.display_value || trip.Bus_ID || `Bus ${i+1}`);
+    const id = trip.ID;
+
+    const card = document.createElement('div');
+    card.className = `slot-card${isFull ? ' full' : ''}`;
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:36px;height:36px;background:${isFull ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.2)'};border-radius:10px;display:flex;align-items:center;justify-content:center;">
+            <svg width="18" height="18" fill="${isFull ? '#ef4444' : 'var(--primary)'}" viewBox="0 0 24 24"><path d="M4 16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v8zm14-9v1H6V7h12z"/></svg>
+          </div>
+          <div>
+            <div style="font-size:0.9rem;font-weight:600;color:white;">${route || 'Route'}</div>
+            <div style="font-size:0.75rem;color:var(--muted);">${busCode}</div>
+          </div>
+        </div>
+        <span class="badge ${isFull ? 'badge-danger' : 'badge-success'}">${isFull ? 'FULL' : seats + ' seats'}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;font-size:0.8rem;color:var(--muted);">
+        <span>🕒 ${depart || '--'}</span>
+        ${!isFull ? '<span style="color:var(--eco-green);">🌿 Save ~5.25 kg CO₂</span>' : '<span>📋 Join Standby</span>'}
+      </div>
+    `;
+    if (!isFull) {
+      card.addEventListener('click', () => openBookingModal(trip, isLegacy));
+    } else {
+      card.addEventListener('click', () => joinStandby(trip, id));
+    }
+    list.appendChild(card);
+  });
+  updateHomeStats();
+}
+
+async function loadMyBookings() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.bookings,
+      criteria: `Employee_Email == "${state.currentUser.email}" && Status != "Cancelled"`,
+    });
+    if (resp.code === 3000) {
+      state.myBookings = resp.data || [];
+      const active = state.myBookings.find(b => b.Status === 'Confirmed' || b.Status === 'Active');
+      if (active) {
+        state.activeBooking = active;
+        showActiveBanner(active);
+        generateQRPass(active);
+        loadLeaderboard();
+      }
+    }
+  } catch (e) { console.warn('Bookings load:', e); }
+}
+
+async function loadLeaderboard() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.leaderboard,
+      criteria: '',
+    });
+    if (resp.code === 3000) {
+      state.leaderboard = (resp.data || []).slice(0, 10);
+      renderLeaderboard();
+    }
+  } catch (e) {
+    renderLeaderboard(true);
+  }
+}
+
+function renderLeaderboard(mock = false) {
+  const list = document.getElementById('leaderboard-list');
+  const data = mock ? [
+    { name: 'Ahmed H.', co2: 48.6 }, { name: 'Sara M.', co2: 42.1 },
+    { name: 'Mohamed K.', co2: 38.9 }, { name: 'Nour A.', co2: 31.2 },
+    { name: state.currentUser?.name || 'You', co2: state.currentUser?.co2Saved || 0 },
+  ] : state.leaderboard.map(r => ({ name: r.Employee_Name?.display_value || r.Name, co2: parseFloat(r.CO2_Total_Saved || 0) }));
+
+  list.innerHTML = data.map((row, i) => {
+    const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-n';
+    return `
+      <div class="leaderboard-row">
+        <div class="rank-badge ${rankClass}">${i + 1}</div>
+        <div style="flex:1;font-size:0.85rem;font-weight:500;color:white;">${row.name}</div>
+        <div style="font-size:0.8rem;color:var(--eco-green);font-weight:600;">${row.co2.toFixed(1)} kg</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// BOOKING
+// ─────────────────────────────────────────────
+function openBookingModal(trip, isLegacy = false) {
+  state.selectedTrip = { ...trip, isLegacy };
+  const route = isLegacy ? trip.Dropoff_Point : trip.Route;
+  const depart = isLegacy ? trip.Available_From : trip.Departure_Time;
+  const bus = isLegacy ? trip.Bus_Code : (trip.Bus?.display_value || 'Bus');
+  const co2 = (APP_CONFIG.avgRouteKm * APP_CONFIG.co2PerKm).toFixed(2);
+
+  document.getElementById('modal-title').textContent = `Book to ${route}`;
+  document.getElementById('modal-details').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div><div style="font-size:0.7rem;color:var(--muted);">ROUTE</div><div style="font-weight:600;color:white;">${route}</div></div>
+      <div><div style="font-size:0.7rem;color:var(--muted);">BUS</div><div style="font-weight:600;color:white;">${bus}</div></div>
+      <div><div style="font-size:0.7rem;color:var(--muted);">DEPARTS</div><div style="font-weight:600;color:white;">${depart || '--'}</div></div>
+      <div><div style="font-size:0.7rem;color:var(--eco-green);">CO₂ SAVED</div><div style="font-weight:600;color:var(--eco-green);">~${co2} kg</div></div>
+    </div>
+  `;
+  document.getElementById('booking-modal').style.display = 'block';
+}
+
+function closeBookingModal() {
+  document.getElementById('booking-modal').style.display = 'none';
+  state.selectedTrip = null;
+}
+
+async function confirmBooking() {
+  if (!state.selectedTrip) return;
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Booking...';
+
+  const trip = state.selectedTrip;
+  const qrHash = generateQRHash(state.currentUser.email, trip.ID, Date.now());
+
+  try {
+    const formData = trip.isLegacy ? {
+      Employee_Name: state.currentUser.name,
+      HITS_ID: state.currentUser.hitsId || state.currentUser.id,
+      Employee_Email: state.currentUser.email,
+      Dropoff_Point: trip.Dropoff_Point,
+      Date_Time_of_Departure: trip.Available_From,
+      QR_Hash: qrHash,
+      Status: 'Confirmed',
+      CO2_Saved: (APP_CONFIG.avgRouteKm * APP_CONFIG.co2PerKm).toFixed(2),
+    } : {
+      Employee_ID: state.currentUser.id,
+      Employee_Email: state.currentUser.email,
+      Trip_ID: trip.ID,
+      QR_Hash: qrHash,
+      Status: 'Confirmed',
+      CO2_Saved: (APP_CONFIG.avgRouteKm * APP_CONFIG.co2PerKm).toFixed(2),
+    };
+
+    const resp = await ZOHO.CREATOR.API.addRecord({
+      appName: APP_CONFIG.appName,
+      formName: trip.isLegacy ? 'New_Booking_Request' : APP_CONFIG.forms.bookings,
+      data: formData,
+    });
+
+    if (resp.code === 3000) {
+      state.activeBooking = { ...formData, ID: resp.data?.ID };
+      closeBookingModal();
+      showToast('✅ Booking confirmed! Check your QR pass.');
+      showActiveBanner(state.activeBooking);
+      generateQRPass(state.activeBooking);
+      await loadMyBookings();
+    } else {
+      showToast('❌ Booking failed: ' + (resp.message || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showToast('❌ Network error. Please retry.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Confirm & Book';
+  }
+}
+
+async function joinStandby(trip, tripId) {
+  showToast('⏳ Joining standby list...');
+  try {
+    await ZOHO.CREATOR.API.addRecord({
+      appName: APP_CONFIG.appName,
+      formName: 'Overflow_Standby',
+      data: {
+        Employee_ID: state.currentUser.id,
+        Employee_Email: state.currentUser.email,
+        Trip_ID: tripId || trip.ID,
+        Status: 'Waiting',
+        Request_Time: new Date().toISOString(),
+      },
+    });
+    showToast('📋 Added to standby. You\'ll be notified if a seat opens.');
+  } catch (e) {
+    showToast('📋 Standby request sent.');
+  }
+}
+
+// ─────────────────────────────────────────────
+// QR PASS
+// ─────────────────────────────────────────────
+function generateQRHash(email, tripId, ts) {
+  let hash = 0;
+  const str = `${email}:${tripId}:${ts}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return `CTMS-${Math.abs(hash).toString(16).toUpperCase().padStart(8, '0')}`;
+}
+
+function generateQRPass(booking) {
+  const pass = document.getElementById('qr-pass');
+  const noBooking = document.getElementById('qr-no-booking');
+  if (!booking) { pass.style.display = 'none'; noBooking.style.display = 'block'; return; }
+  pass.style.display = 'block';
+  noBooking.style.display = 'none';
+
+  const qrData = JSON.stringify({
+    hash: booking.QR_Hash,
+    emp: state.currentUser.email,
+    trip: booking.Trip_ID || booking.ID,
+    ts: Date.now(),
+  });
+
+  QRCode.toCanvas(document.getElementById('qr-canvas'), qrData, {
+    width: 180, margin: 1,
+    color: { dark: '#000000', light: '#ffffff' },
+  });
+
+  document.getElementById('pass-name').textContent = state.currentUser.name || '--';
+  document.getElementById('pass-hitsid').textContent = state.currentUser.hitsId || '--';
+  document.getElementById('pass-dest').textContent = booking.Dropoff_Point || booking.Route || '--';
+  document.getElementById('pass-time').textContent = booking.Date_Time_of_Departure || booking.Departure_Time || '--';
+  document.getElementById('pass-bus').textContent = booking.Bus_Code || booking.Bus || '--';
+  document.getElementById('qr-hash-display').textContent = booking.QR_Hash || '--';
+}
+
+// ─────────────────────────────────────────────
+// LIVE MAP
+// ─────────────────────────────────────────────
+function initMap() {
+  const mapEl = document.getElementById('live-map');
+  if (!mapEl || state.map) return;
+
+  state.map = L.map('live-map', { zoomControl: true, attributionControl: false }).setView([30.0444, 31.2357], 11);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+  }).addTo(state.map);
+
+  const busIcon = L.divIcon({
+    html: `<div style="width:32px;height:32px;background:#6366f1;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>`,
+    iconSize: [32, 32], iconAnchor: [16, 28],
+  });
+  state.busMarker = L.marker([30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
+
+  startTrackingPolling();
+}
+
+function startTrackingPolling() {
+  if (state.trackingInterval) return;
+  state.trackingInterval = setInterval(pollBusLocation, 10000);
+  pollBusLocation();
+}
+
+async function pollBusLocation() {
+  if (!state.activeBooking) return;
+  const tripId = state.activeBooking.Trip_ID || state.activeBooking.ID;
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.trackingLogs,
+      criteria: `Trip_ID == "${tripId}"`,
+      sort_by: '-Timestamp',
+      max_records: 1,
+    });
+    if (resp.code === 3000 && resp.data?.length) {
+      const log = resp.data[0];
+      const lat = parseFloat(log.Lat);
+      const lng = parseFloat(log.Lng);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        state.busMarker.setLatLng([lat, lng]);
+        state.map.panTo([lat, lng]);
+        document.getElementById('bus-coords').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        updateETA(lat, lng);
+      }
+    }
+  } catch (e) { /* silent */ }
+}
+
+function updateETA(lat, lng) {
+  // Simulated ETA using Haversine to destination
+  const destLat = 30.0621, destLng = 31.3141; // example: Cairo east
+  const d = haversineKm(lat, lng, destLat, destLng);
+  const eta = Math.round((d / 40) * 60); // 40 km/h avg
+  document.getElementById('bus-eta').textContent = `ETA: ~${eta} min (${d.toFixed(1)} km away)`;
+  const pct = Math.max(0, Math.min(100, 100 - (d / APP_CONFIG.avgRouteKm * 100)));
+  document.getElementById('route-progress').style.width = pct + '%';
+  document.getElementById('route-pct').textContent = Math.round(pct) + '%';
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ─────────────────────────────────────────────
+// ECO DASHBOARD
+// ─────────────────────────────────────────────
+const ECO_LEVELS = [
+  { name: 'Eco Starter', nameAr: 'مبتدئ بيئي', min: 0, max: 500, desc: 'Keep riding to level up!' },
+  { name: 'Green Rider', nameAr: 'راكب أخضر', min: 500, max: 1500, desc: 'Great start! You\'re making a difference.' },
+  { name: 'Carbon Saver', nameAr: 'موفر كربون', min: 1500, max: 3500, desc: 'You\'re saving real carbon emissions!' },
+  { name: 'Eco Champion', nameAr: 'بطل بيئي', min: 3500, max: 7000, desc: 'Champion level! You\'re an inspiration.' },
+  { name: 'Planet Hero', nameAr: 'بطل الكوكب', min: 7000, max: Infinity, desc: 'You\'ve reached the highest eco rank!' },
+];
+
+function updateEcoUI() {
+  const co2 = state.currentUser?.co2Saved || 0;
+  const pts = state.currentUser?.ecoPoints || Math.round(co2 * 10);
+  document.getElementById('eco-total').textContent = co2.toFixed(1);
+  document.getElementById('eco-trees').textContent = Math.floor(co2 / 21.7);
+  document.getElementById('eco-km').textContent = Math.round(co2 / APP_CONFIG.co2PerKm);
+
+  const level = ECO_LEVELS.findIndex(l => pts < l.max);
+  const lv = ECO_LEVELS[Math.max(0, level)] || ECO_LEVELS[ECO_LEVELS.length - 1];
+  const pct = lv.max === Infinity ? 100 : Math.min(100, ((pts - lv.min) / (lv.max - lv.min)) * 100);
+
+  document.getElementById('eco-level-name').textContent = state.lang === 'ar' ? lv.nameAr : lv.name;
+  document.getElementById('eco-level-desc').textContent = lv.desc;
+  document.getElementById('eco-level-progress').style.width = pct + '%';
+  document.getElementById('eco-pts-current').textContent = pts + ' pts';
+  document.getElementById('eco-pts-next').textContent = lv.max === Infinity ? 'Max level!' : (lv.max - pts) + ' pts to next level';
+
+  const circumference = 327;
+  const dashoffset = circumference - (co2 / 100) * circumference;
+  document.getElementById('eco-circle').style.strokeDashoffset = Math.max(0, dashoffset);
+  document.getElementById('stat-co2').textContent = co2.toFixed(1) + ' kg';
+
+  // Update rank from leaderboard
+  const myIdx = state.leaderboard.findIndex(r => r.Employee_Email === state.currentUser.email);
+  document.getElementById('eco-rank').textContent = myIdx >= 0 ? '#' + (myIdx + 1) : '#--';
+}
+
+function updateHomeStats() {
+  const now = new Date();
+  const monthBookings = state.myBookings.filter(b => {
+    const d = new Date(b.Date_Time_of_Departure || b.Added_Time);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+  document.getElementById('stat-trips').textContent = monthBookings.length;
+}
+
+function showActiveBanner(booking) {
+  const banner = document.getElementById('active-booking-banner');
+  banner.style.display = 'block';
+  document.getElementById('active-route').textContent = 'Route: ' + (booking.Dropoff_Point || booking.Route || '--');
+  document.getElementById('active-depart').textContent = 'Departs: ' + (booking.Date_Time_of_Departure || booking.Departure_Time || '--');
+}
+
+// ─────────────────────────────────────────────
+// AI BOOKING AGENT
+// ─────────────────────────────────────────────
+async function sendAIMessage() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  appendChatMessage(msg, 'user');
+  showTypingIndicator();
+
+  const tripsContext = JSON.stringify(state.trips.slice(0, 10).map(t => ({
+    id: t.ID,
+    route: t.Route || t.Dropoff_Point,
+    depart: t.Departure_Time || t.Available_From,
+    seats: t.Available_Seats || t.Number_of_Seats,
+    bus: t.Bus_Code || t.Bus?.display_value,
+  })));
+
+  const prompt = `You are a transportation booking assistant for Centro company in Cairo, Egypt.
+The user wants to book a bus ride. Available trips: ${tripsContext}
+User request: "${msg}"
+Respond in ${state.lang === 'ar' ? 'Arabic' : 'English'} with:
+1. A friendly confirmation of what trip you recommend
+2. The trip ID to book (trip_id field)
+3. Ask for confirmation
+Keep response under 100 words. Format: {"message": "...", "trip_id": "...", "confirmed": false}`;
+
+  try {
+    let aiReply = null;
+    // Try to call AI API through a Zoho Flow proxy for security
+    // In production: replace with Zoho Flow webhook URL that proxies to Gemini/OpenAI
+    const resp = await callAI(prompt);
+    removeTypingIndicator();
+
+    if (resp?.trip_id) {
+      const matchedTrip = state.trips.find(t => t.ID === resp.trip_id);
+      if (matchedTrip) {
+        appendChatMessage(resp.message, 'ai');
+        setTimeout(() => {
+          appendChatMessage('Tap below to confirm your booking:', 'ai');
+          appendBookingCard(matchedTrip);
+        }, 500);
+        return;
+      }
+    }
+    appendChatMessage(resp?.message || "I found some matching trips! Which one would you like?", 'ai');
+  } catch (e) {
+    removeTypingIndicator();
+    // Fallback: parse manually
+    const fallback = parseNLPLocally(msg);
+    appendChatMessage(fallback.message, 'ai');
+    if (fallback.trip) appendBookingCard(fallback.trip);
+  }
+}
+
+async function callAI(prompt) {
+  // Use Zoho Flow webhook as proxy to avoid exposing API key in frontend
+  // Fallback to direct call if configured
+  const resp = await fetch(`${APP_CONFIG.aiEndpoint}?key=${APP_CONFIG.aiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+  });
+  const data = await resp.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  const json = text.match(/\{.*\}/s)?.[0] || '{}';
+  return JSON.parse(json);
+}
+
+function parseNLPLocally(msg) {
+  const lower = msg.toLowerCase();
+  const matchedTrip = state.trips.find(t => {
+    const route = (t.Route || t.Dropoff_Point || '').toLowerCase();
+    return lower.includes(route) || (lower.includes('dropoff') && route.includes('dropoff'));
+  }) || state.trips[0];
+
+  if (matchedTrip) {
+    return {
+      message: `I found a trip to ${matchedTrip.Route || matchedTrip.Dropoff_Point} departing at ${matchedTrip.Departure_Time || matchedTrip.Available_From}. Would you like to book it?`,
+      trip: matchedTrip,
+    };
+  }
+  return { message: "I couldn't find an exact match. Here are the available trips:", trip: null };
+}
+
+function appendBookingCard(trip) {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-bubble-ai';
+  div.innerHTML = `
+    <div style="border:1px solid rgba(99,102,241,0.4);border-radius:10px;padding:10px;margin-bottom:8px;">
+      <div style="font-weight:600;margin-bottom:4px;">${trip.Route || trip.Dropoff_Point}</div>
+      <div style="font-size:0.8rem;color:var(--muted);">🕒 ${trip.Departure_Time || trip.Available_From} &nbsp; 🚌 ${trip.Bus_Code || trip.Bus?.display_value || 'Bus'}</div>
+    </div>
+    <button onclick="openBookingModal(${JSON.stringify(trip).replace(/"/g, '&quot;')})"
+      style="width:100%;padding:8px;background:var(--primary);border:none;border-radius:8px;color:white;cursor:pointer;font-size:0.85rem;">
+      Book This Trip
+    </button>
+  `;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function appendChatMessage(text, role) {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai';
+  div.textContent = text;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function showTypingIndicator() {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.id = 'typing-indicator';
+  div.className = 'chat-bubble-ai chat-typing';
+  div.innerHTML = '<span></span><span></span><span></span>';
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTypingIndicator() {
+  document.getElementById('typing-indicator')?.remove();
+}
+
+// ─────────────────────────────────────────────
+// VOICE INPUT
+// ─────────────────────────────────────────────
+function toggleVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('Voice input not supported in this browser');
+    return;
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (state.voiceActive) {
+    state.recognition?.stop();
+    return;
+  }
+  state.recognition = new SpeechRecognition();
+  state.recognition.lang = state.lang === 'ar' ? 'ar-EG' : 'en-US';
+  state.recognition.interimResults = false;
+  state.recognition.onstart = () => {
+    state.voiceActive = true;
+    document.getElementById('voice-btn').style.background = 'rgba(239,68,68,0.3)';
+    document.getElementById('voice-btn').style.borderColor = '#ef4444';
+    showToast('🎤 Listening...');
+  };
+  state.recognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    document.getElementById('chat-input').value = text;
+    sendAIMessage();
+  };
+  state.recognition.onend = () => {
+    state.voiceActive = false;
+    document.getElementById('voice-btn').style.background = 'rgba(99,102,241,0.2)';
+    document.getElementById('voice-btn').style.borderColor = 'rgba(99,102,241,0.4)';
+  };
+  state.recognition.start();
+}
+
+// ─────────────────────────────────────────────
+// LANGUAGE TOGGLE
+// ─────────────────────────────────────────────
+function toggleLanguage() {
+  state.lang = state.lang === 'en' ? 'ar' : 'en';
+  document.documentElement.lang = state.lang;
+  document.documentElement.dir = state.lang === 'ar' ? 'rtl' : 'ltr';
+  document.getElementById('lang-label').textContent = state.lang === 'ar' ? 'EN' : 'AR';
+  document.querySelectorAll('[data-en]').forEach(el => {
+    el.textContent = el.getAttribute(`data-${state.lang}`);
+  });
+  initUI();
+}
+
+// ─────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`screen-${name}`).classList.add('active');
+  document.getElementById(`tab-${name}`)?.classList.add('active');
+  if (name === 'map') { state.map?.invalidateSize(); }
+  if (name === 'eco') { updateEcoUI(); loadLeaderboard(); }
+  if (name === 'qr') { generateQRPass(state.activeBooking); }
+}
+
+function showToast(msg, type = 'info') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.style.display = 'block';
+  toast.style.borderColor = type === 'error' ? 'var(--danger)' : 'var(--primary)';
+  setTimeout(() => { toast.style.display = 'none'; }, 3000);
+}
+</script>
+</body>
+</html>

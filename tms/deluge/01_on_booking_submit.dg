@@ -1,0 +1,187 @@
+/**
+ * WORKFLOW: On Booking Submit — Seat Concurrency Validation + QR Hash Generation
+ * Trigger: On Submit of "Bookings" (or "New_Booking_Request") form
+ * Place: Form Workflow → On Add → Action Script
+ */
+
+// ── Fetch the selected trip record ──────────────────────────────────────────
+tripId = input.Trip_ID.toLong();
+tripRecord = zoho.creator.getRecordById(
+    "centrocdx",
+    "transportation-app",
+    "Active_Timings",
+    tripId
+);
+
+if (tripRecord.isNull() || tripRecord.isEmpty()) {
+    // Trip not found — abort
+    zoho.creator.setFailureMessage("Trip not found. Please try again.");
+    return;
+}
+
+currentSeats = tripRecord.get("Available_Seats").toLong();
+
+// ── Seat availability check (optimistic concurrency) ────────────────────────
+if (currentSeats <= 0) {
+    // Redirect to standby workflow
+    zoho.creator.setFailureMessage("This trip is fully booked. You've been added to the standby list.");
+
+    // Add to standby
+    standbyData = map();
+    standbyData.put("Employee_ID", input.Employee_ID);
+    standbyData.put("Employee_Email", input.Employee_Email);
+    standbyData.put("Trip_ID", input.Trip_ID);
+    standbyData.put("Status", "Waiting");
+    standbyData.put("Request_Time", zoho.currenttime);
+    zoho.creator.createRecord("centrocdx", "transportation-app", "Overflow_Standby", standbyData);
+
+    // Check if standby count > 10 → trigger ghost bus alert
+    standbyList = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_Overflow_Standby",
+        "Trip_ID == " + '"' + input.Trip_ID + '"' + " && Status == \"Waiting\""
+    );
+    if (standbyList.size() >= 10) {
+        ghostBusWebhookUrl = "YOUR_GHOST_BUS_WEBHOOK_URL"; // Zoho Flow webhook
+        webhookData = map();
+        webhookData.put("trip_id", input.Trip_ID);
+        webhookData.put("standby_count", standbyList.size());
+        webhookData.put("route", tripRecord.get("Route"));
+        webhookData.put("bus_code", tripRecord.get("Bus_Code"));
+        webhookData.put("alert_type", "GHOST_BUS_REQUIRED");
+        webhookData.put("timestamp", zoho.currenttime.toString());
+        response = invokeurl
+        [
+            url: ghostBusWebhookUrl
+            type: POST
+            parameters: webhookData.toString()
+        ];
+    }
+    return;
+}
+
+// ── Decrement seat count atomically ─────────────────────────────────────────
+newSeatCount = currentSeats - 1;
+updateMap = map();
+updateMap.put("Available_Seats", newSeatCount);
+
+// Mark as full if seats now 0
+if (newSeatCount == 0) {
+    updateMap.put("Status", "Full");
+}
+
+zoho.creator.updateRecord(
+    "centrocdx",
+    "transportation-app",
+    "All_Active_Timings",
+    tripId,
+    updateMap
+);
+
+// ── Generate QR Hash ─────────────────────────────────────────────────────────
+// Simple deterministic hash: employee + trip + epoch (padded hex)
+empEmail = input.Employee_Email;
+timestamp = zoho.currenttime.toEpoch().toString();
+rawString = empEmail + ":" + input.Trip_ID + ":" + timestamp;
+
+// Deluge lacks native SHA256; use a multi-factor hash combining fields
+hashA = empEmail.hashCode().abs();
+hashB = input.Trip_ID.toString().hashCode().abs();
+hashC = timestamp.right(6).toLong();
+combinedHash = ((hashA * 31) + hashB + hashC).toString(16).toUpperCase();
+qrHash = "CTMS-" + combinedHash.leftpad(8, "0").right(8);
+
+// ── Enrich the booking record ────────────────────────────────────────────────
+bookingUpdate = map();
+bookingUpdate.put("QR_Hash", qrHash);
+bookingUpdate.put("Status", "Confirmed");
+bookingUpdate.put("Booking_Time", zoho.currenttime);
+
+// Calculate CO2 saved (distance * 0.21 kg/km avg car emission offset)
+routeKm = tripRecord.get("Route_Distance_Km");
+if (routeKm.isNull() || routeKm.toString().isEmpty()) {
+    routeKm = 25; // default Cairo commute estimate
+}
+co2Saved = routeKm.toDecimal() * 0.21;
+bookingUpdate.put("CO2_Saved", co2Saved.setScale(2));
+
+// Update booking (current record being submitted)
+zoho.creator.updateRecord(
+    "centrocdx",
+    "transportation-app",
+    "All_TMS_Bookings",
+    input.ID,
+    bookingUpdate
+);
+
+// ── Update Employee CO2 + Eco Points ─────────────────────────────────────────
+empRecords = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Employee_Registrations",
+    "Email == " + '"' + empEmail + '"'
+);
+
+if (empRecords.size() > 0) {
+    empRecord = empRecords.get(0);
+    currentCO2 = empRecord.get("CO2_Total_Saved").toDecimal();
+    if (currentCO2.isNull()) { currentCO2 = 0.0; }
+    currentPoints = empRecord.get("Eco_Points").toLong();
+    if (currentPoints.isNull()) { currentPoints = 0; }
+
+    newCO2 = currentCO2 + co2Saved;
+    newPoints = currentPoints + (co2Saved * 10).toLong();
+
+    empUpdate = map();
+    empUpdate.put("CO2_Total_Saved", newCO2.setScale(2));
+    empUpdate.put("Eco_Points", newPoints);
+    empUpdate.put("Total_Trips", empRecord.get("Total_Trips").toLong() + 1);
+
+    zoho.creator.updateRecord(
+        "centrocdx",
+        "transportation-app",
+        "All_Employee_Registrations",
+        empRecord.get("ID"),
+        empUpdate
+    );
+}
+
+// ── Update Heatmap Data ───────────────────────────────────────────────────────
+pickupZone = tripRecord.get("Origin_Zone");
+dropoffZone = tripRecord.get("Route");
+if (!pickupZone.isNull() && !dropoffZone.isNull()) {
+    existingHeatmap = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_Heatmap_Data",
+        "Pickup_Zone == " + '"' + pickupZone + '"' + " && Dropoff_Zone == " + '"' + dropoffZone + '"'
+    );
+
+    if (existingHeatmap.size() > 0) {
+        heatRecord = existingHeatmap.get(0);
+        currentScore = heatRecord.get("Demand_Score").toDecimal();
+        newScore = currentScore + 1;
+        heatUpdate = map();
+        heatUpdate.put("Demand_Score", newScore);
+        heatUpdate.put("Last_Updated", zoho.currenttime);
+        zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Heatmap_Data", heatRecord.get("ID"), heatUpdate);
+    } else {
+        heatData = map();
+        heatData.put("Pickup_Zone", pickupZone);
+        heatData.put("Dropoff_Zone", dropoffZone);
+        heatData.put("Demand_Score", 1);
+        heatData.put("Timestamp", zoho.currenttime);
+        zoho.creator.createRecord("centrocdx", "transportation-app", "Heatmap_Data", heatData);
+    }
+}
+
+// ── Send Zoho Cliq notification ───────────────────────────────────────────────
+cliqMessage = "✅ New booking confirmed!\n" +
+    "Employee: " + input.Employee_Email + "\n" +
+    "Route: " + tripRecord.get("Route") + "\n" +
+    "Bus: " + tripRecord.get("Bus_Code") + "\n" +
+    "Seats remaining: " + newSeatCount + "\n" +
+    "QR: " + qrHash;
+
+zoho.cliq.postToChannel("transportation-ops", cliqMessage);

@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Centro TMS – Driver</title>
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="driver-manifest.json">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- html5-qrcode for camera scanning -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://js.zohostatic.com/creator/widgets/version/1/widgetsdk.js"></script>
+
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111827;
+      --card: #1f2937;
+      --border: #374151;
+      --primary: #6366f1;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --accent: #22d3ee;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; overflow-x: hidden; min-height: 100vh; }
+    .big-btn { width: 100%; min-height: 72px; border-radius: 16px; font-size: 1.1rem; font-weight: 700; border: none; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 10px; letter-spacing: 0.5px; }
+    .big-btn:active { transform: scale(0.97); }
+    .btn-start { background: linear-gradient(135deg, var(--success), #059669); color: white; box-shadow: 0 4px 24px rgba(16,185,129,0.3); }
+    .btn-stop { background: linear-gradient(135deg, var(--danger), #b91c1c); color: white; box-shadow: 0 4px 24px rgba(239,68,68,0.3); }
+    .btn-scan { background: linear-gradient(135deg, var(--primary), #4f46e5); color: white; box-shadow: 0 4px 24px rgba(99,102,241,0.3); }
+    .btn-sos { background: linear-gradient(135deg, #dc2626, #991b1b); color: white; box-shadow: 0 8px 32px rgba(220,38,38,0.4); animation: sos-pulse 2s infinite; }
+    @keyframes sos-pulse { 0%,100% { box-shadow: 0 8px 32px rgba(220,38,38,0.4); } 50% { box-shadow: 0 8px 48px rgba(220,38,38,0.7); } }
+    .card { background: var(--card); border-radius: 16px; padding: 16px; border: 1px solid var(--border); margin-bottom: 12px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.5px; }
+    .status-idle { background: rgba(156,163,175,0.15); color: var(--muted); border: 1px solid var(--border); }
+    .status-active { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+    .status-scanning { background: rgba(99,102,241,0.15); color: var(--primary); border: 1px solid rgba(99,102,241,0.3); }
+    .pax-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .pax-row:last-child { border-bottom: none; }
+    .pax-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #7c3aed); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; flex-shrink: 0; }
+    .scan-badge { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .scanned { background: rgba(16,185,129,0.2); color: var(--success); }
+    .not-scanned { background: rgba(156,163,175,0.1); color: var(--muted); }
+    .pending { background: rgba(245,158,11,0.2); color: var(--warning); }
+    #map-mini { height: 200px; border-radius: 12px; overflow: hidden; }
+    .stat-box { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; text-align: center; }
+    .offline-banner { background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.3); border-radius: 12px; padding: 10px 14px; font-size: 0.82rem; color: var(--warning); display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .qr-reader-wrapper { border-radius: 16px; overflow: hidden; background: black; }
+    #html5-qr-code-full-region { border: none !important; }
+    #html5-qr-code-full-region img { display: none; }
+    .scan-result { padding: 12px; border-radius: 12px; font-size: 0.9rem; font-weight: 600; text-align: center; animation: fade-in 0.3s ease; }
+    .scan-ok { background: rgba(16,185,129,0.2); border: 1px solid rgba(16,185,129,0.4); color: var(--success); }
+    .scan-fail { background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); color: var(--danger); }
+    .scan-offline { background: rgba(245,158,11,0.2); border: 1px solid rgba(245,158,11,0.4); color: var(--warning); }
+    @keyframes fade-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: var(--card); border: 1px solid var(--primary); border-radius: 12px; padding: 12px 20px; z-index: 9999; font-size: 0.9rem; min-width: 260px; text-align: center; }
+    .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(17,24,39,0.97); backdrop-filter: blur(12px); border-top: 1px solid var(--border); display: flex; padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); z-index: 100; }
+    .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0; cursor: pointer; background: none; border: none; color: var(--muted); font-size: 0.65rem; transition: color 0.2s; }
+    .tab-btn.active { color: var(--primary); }
+    .screen { display: none; min-height: calc(100vh - 72px); padding: 16px 16px 80px; }
+    .screen.active { display: block; }
+    .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--success), #059669); border-radius: 4px; transition: width 0.4s; }
+    .pulse { animation: pulse-anim 2s infinite; }
+    @keyframes pulse-anim { 0%,100%{ opacity:1; } 50%{ opacity:0.5; } }
+    .gps-dot { width: 10px; height: 10px; background: var(--success); border-radius: 50%; box-shadow: 0 0 0 3px rgba(16,185,129,0.2); }
+    .incident-form input, .incident-form textarea, .incident-form select { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: 0.9rem; outline: none; margin-bottom: 10px; }
+    .incident-form textarea { min-height: 80px; resize: vertical; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header style="position:sticky;top:0;z-index:50;background:rgba(10,10,15,0.97);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+  <div style="display:flex;align-items:center;gap:10px;">
+    <div style="width:36px;height:36px;background:linear-gradient(135deg,var(--primary),#7c3aed);border-radius:10px;display:flex;align-items:center;justify-content:center;">
+      <svg width="22" height="22" fill="white" viewBox="0 0 24 24"><path d="M4 16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v8zm14-9v1H6V7h12zm-6 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+    </div>
+    <div>
+      <div style="font-size:0.85rem;font-weight:700;color:white;" id="driver-name">Driver</div>
+      <div style="font-size:0.75rem;color:var(--muted);" id="driver-bus">Bus: --</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <div id="trip-status-pill" class="status-pill status-idle">
+      <span style="width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;"></span>
+      IDLE
+    </div>
+    <div id="offline-indicator" style="display:none;font-size:0.7rem;background:rgba(245,158,11,0.2);color:var(--warning);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:4px 8px;">OFFLINE</div>
+  </div>
+</header>
+
+<!-- Screen: Trip Control -->
+<div id="screen-trip" class="screen active">
+
+  <div id="offline-alert" style="display:none;" class="offline-banner">
+    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M1 1l22 22-1.41 1.41-3.02-3.02C16.13 22.45 14.11 23 12 23c-5.52 0-10-4.48-10-10 0-2.11.55-4.13 1.61-5.87L1 1zM5.26 7.26l1.43 1.43C6.24 9.58 6 10.26 6 11c0 3.31 2.69 6 6 6 .74 0 1.42-.24 2.31-.69l1.43 1.43C14.47 18.4 13.26 19 12 19c-4.41 0-8-3.59-8-8 0-1.26.6-2.47 1.26-3.74z"/></svg>
+    Offline mode active — scans are cached and will sync automatically when connected.
+  </div>
+
+  <!-- GPS stats -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+    <div class="stat-box">
+      <div style="font-size:1.1rem;font-weight:700;color:var(--success);" id="stat-pax">0</div>
+      <div style="font-size:0.65rem;color:var(--muted);">Boarded</div>
+    </div>
+    <div class="stat-box">
+      <div style="font-size:1.1rem;font-weight:700;color:var(--accent);" id="stat-seats">0</div>
+      <div style="font-size:0.65rem;color:var(--muted);">Total Seats</div>
+    </div>
+    <div class="stat-box">
+      <div style="font-size:1.1rem;font-weight:700;color:var(--warning);" id="stat-dist">0 km</div>
+      <div style="font-size:0.65rem;color:var(--muted);">Distance</div>
+    </div>
+  </div>
+
+  <!-- GPS + Progress -->
+  <div class="card" style="margin-bottom:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="font-size:0.85rem;font-weight:600;color:white;">GPS Tracking</div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="gps-dot" id="gps-dot" style="background:var(--muted);box-shadow:none;"></div>
+        <span style="font-size:0.75rem;color:var(--muted);" id="gps-status">Not tracking</span>
+      </div>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="trip-progress" style="width:0%"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.72rem;color:var(--muted);">
+      <span id="trip-origin">Depot</span>
+      <span id="trip-pct">0%</span>
+      <span id="trip-dest">Destination</span>
+    </div>
+    <div style="margin-top:8px;font-size:0.78rem;color:var(--muted);" id="gps-coords">Coordinates: --</div>
+    <div style="margin-top:4px;font-size:0.78rem;color:var(--accent);" id="gps-speed">Speed: --</div>
+  </div>
+
+  <!-- Mini map -->
+  <div id="map-mini" style="margin-bottom:12px;"></div>
+
+  <!-- Main control buttons -->
+  <button id="trip-toggle-btn" class="big-btn btn-start" onclick="toggleTrip()">
+    <svg width="28" height="28" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+    START TRIP
+  </button>
+
+  <div style="height:10px;"></div>
+
+  <button class="big-btn btn-scan" onclick="showScreen('scan')" style="min-height:60px;font-size:1rem;">
+    <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M9.5 6.5v3h-3v-3h3M11 5H5v6h6V5zm-1.5 9.5v3h-3v-3h3M11 13H5v6h6v-6zm6.5-6.5v3h-3v-3h3M19 5h-6v6h6V5zm-6 8h1.5v1.5H13V13zm1.5 1.5H16V16h-1.5v-1.5zM16 13h1.5v1.5H16V13zm-3 3h1.5v1.5H13V16zm1.5 1.5H16V19h-1.5v-1.5zM16 16h1.5v1.5H16V16zm1.5-1.5H19V16h-1.5v-1.5zM19 13h-1.5v1.5H19V13z"/></svg>
+    SCAN QR BOARDING PASS
+  </button>
+
+  <div style="height:10px;"></div>
+
+  <!-- Emergency SOS -->
+  <button class="big-btn btn-sos" style="min-height:56px;font-size:0.95rem;" onclick="triggerSOS()">
+    <svg width="22" height="22" fill="white" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+    EMERGENCY SOS
+  </button>
+</div>
+
+<!-- Screen: QR Scanner -->
+<div id="screen-scan" class="screen">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+    <button onclick="stopScanner();showScreen('trip')" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 12px;color:white;cursor:pointer;">← Back</button>
+    <h2 style="font-size:1rem;font-weight:700;color:white;">Scan Boarding Pass</h2>
+  </div>
+
+  <div id="scan-result-banner" style="display:none;margin-bottom:12px;"></div>
+
+  <div class="qr-reader-wrapper" style="margin-bottom:12px;">
+    <div id="html5-qr-scanner"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-size:0.85rem;font-weight:600;color:white;margin-bottom:8px;">📋 Scan Log (Session)</div>
+    <div id="scan-log" style="max-height:200px;overflow-y:auto;">
+      <div style="text-align:center;padding:20px;color:var(--muted);font-size:0.85rem;">No scans yet</div>
+    </div>
+  </div>
+
+  <div id="offline-queue-info" style="display:none;" class="offline-banner" style="margin-top:8px;">
+    <span id="queue-count">0</span> scans queued offline — will sync when connected.
+    <button onclick="syncOfflineScans()" style="margin-left:auto;background:var(--warning);border:none;border-radius:8px;padding:4px 10px;color:#1a1a1a;font-size:0.78rem;cursor:pointer;">Sync Now</button>
+  </div>
+</div>
+
+<!-- Screen: Passenger List -->
+<div id="screen-pax" class="screen">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <h2 style="font-size:1rem;font-weight:700;color:white;">Passenger Manifest</h2>
+    <button onclick="refreshManifest()" style="background:none;border:none;color:var(--muted);font-size:0.8rem;cursor:pointer;">Refresh</button>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div id="pax-list" style="padding:4px 16px;"></div>
+  </div>
+  <div style="margin-top:10px;font-size:0.8rem;color:var(--muted);text-align:center;" id="pax-summary">--</div>
+</div>
+
+<!-- Screen: Incident Report -->
+<div id="screen-incident" class="screen">
+  <h2 style="font-size:1rem;font-weight:700;color:white;margin-bottom:4px;">Report Incident</h2>
+  <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px;">Submit immediately — dispatchers will be notified</p>
+
+  <div class="card incident-form">
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:6px;">Incident Type</div>
+    <select id="incident-type">
+      <option value="breakdown">Vehicle Breakdown</option>
+      <option value="accident">Accident / Collision</option>
+      <option value="medical">Medical Emergency (Passenger)</option>
+      <option value="route_deviation">Forced Route Deviation</option>
+      <option value="security">Security Threat</option>
+      <option value="other">Other</option>
+    </select>
+
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:6px;">Description</div>
+    <textarea id="incident-desc" placeholder="Describe what happened..."></textarea>
+
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:6px;">Current Location (auto-detected)</div>
+    <input type="text" id="incident-location" readonly placeholder="Fetching GPS...">
+
+    <button class="big-btn" style="background:linear-gradient(135deg,var(--danger),#b91c1c);color:white;min-height:52px;" onclick="submitIncident()">
+      <svg width="20" height="20" fill="white" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      Submit Incident Report
+    </button>
+  </div>
+</div>
+
+<!-- Tab Bar -->
+<nav class="tab-bar">
+  <button class="tab-btn active" onclick="showScreen('trip')" id="tab-trip">
+    <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M4 16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v8zm14-9v1H6V7h12z"/></svg>
+    <span style="font-size:0.65rem;">Trip</span>
+  </button>
+  <button class="tab-btn" onclick="showScreen('scan')" id="tab-scan">
+    <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M9.5 6.5v3h-3v-3h3M11 5H5v6h6V5zm-1.5 9.5v3h-3v-3h3M11 13H5v6h6v-6zm6.5-6.5v3h-3v-3h3M19 5h-6v6h6V5z"/></svg>
+    <span style="font-size:0.65rem;">Scan</span>
+  </button>
+  <button class="tab-btn" onclick="showScreen('pax');refreshManifest()" id="tab-pax">
+    <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+    <span style="font-size:0.65rem;">Passengers</span>
+  </button>
+  <button class="tab-btn" onclick="showScreen('incident')" id="tab-incident">
+    <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+    <span style="font-size:0.65rem;">Incident</span>
+  </button>
+</nav>
+
+<div id="toast" class="toast" style="display:none;"></div>
+
+<script>
+// ─────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────
+const APP_CONFIG = {
+  accountOwner: 'centrocdx',
+  appName: 'transportation-app',
+  forms: {
+    trackingLogs: 'Live_Tracking_Logs',
+    bookings: 'New_Booking_Request',
+    incidents: 'Incident_Reports',
+  },
+  reports: {
+    bookings: 'All_Bookings',
+    trackingLogs: 'All_Live_Tracking_Logs',
+  },
+  gpsIntervalMs: 10000,
+  cliqWebhook: 'YOUR_ZOHO_CLIQ_WEBHOOK_URL', // Replace with actual webhook
+};
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let state = {
+  driver: null,
+  currentTrip: null,
+  tripActive: false,
+  watchId: null,
+  lastPosition: null,
+  totalDistance: 0,
+  gpsInterval: null,
+  map: null,
+  busMarker: null,
+  passengerList: [],
+  scanLog: [],
+  offlineQueue: [],
+  qrScanner: null,
+  scannerActive: false,
+  isOnline: navigator.onLine,
+};
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+window.addEventListener('online', handleOnline);
+window.addEventListener('offline', handleOffline);
+
+ZOHO.CREATOR.init().then(() => {
+  return ZOHO.CREATOR.UTIL.getInitParams();
+}).then(params => {
+  state.driver = params.loginUser || {};
+  document.getElementById('driver-name').textContent = state.driver.name || 'Driver';
+  loadDriverTrip();
+  initMiniMap();
+  loadOfflineQueue();
+  refreshManifest();
+}).catch(() => {
+  state.driver = { name: 'Demo Driver', email: 'driver@centro.com', id: 'DRV-001' };
+  document.getElementById('driver-name').textContent = 'Demo Driver';
+  initMiniMap();
+  loadOfflineQueue();
+});
+
+// ─────────────────────────────────────────────
+// TRIP MANAGEMENT
+// ─────────────────────────────────────────────
+async function loadDriverTrip() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: 'All_Active_Timings',
+      criteria: `Driver_Email == "${state.driver.email}" && Status == "Active"`,
+      max_records: 1,
+    });
+    if (resp.code === 3000 && resp.data?.length) {
+      state.currentTrip = resp.data[0];
+      document.getElementById('driver-bus').textContent = 'Bus: ' + (state.currentTrip.Bus_Code || state.currentTrip.Bus?.display_value || '--');
+      document.getElementById('trip-dest').textContent = state.currentTrip.Route || state.currentTrip.Dropoff_Point || 'Destination';
+      document.getElementById('stat-seats').textContent = state.currentTrip.Available_Seats || '--';
+      refreshManifest();
+    }
+  } catch (e) { console.warn('Trip load:', e); }
+}
+
+async function toggleTrip() {
+  const btn = document.getElementById('trip-toggle-btn');
+  if (!state.tripActive) {
+    startTrip(btn);
+  } else {
+    stopTrip(btn);
+  }
+}
+
+async function startTrip(btn) {
+  if (!navigator.geolocation) {
+    showToast('❌ GPS not available on this device');
+    return;
+  }
+
+  state.tripActive = true;
+  btn.className = 'big-btn btn-stop';
+  btn.innerHTML = `<svg width="28" height="28" fill="white" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></svg> STOP TRIP`;
+
+  document.getElementById('trip-status-pill').className = 'status-pill status-active';
+  document.getElementById('trip-status-pill').innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;" class="pulse"></span> ACTIVE`;
+
+  document.getElementById('gps-dot').style.background = 'var(--success)';
+  document.getElementById('gps-dot').style.boxShadow = '0 0 0 3px rgba(16,185,129,0.2)';
+
+  if (state.currentTrip?.ID) {
+    try {
+      await ZOHO.CREATOR.API.updateRecord({
+        appName: APP_CONFIG.appName,
+        reportName: 'All_Active_Timings',
+        id: state.currentTrip.ID,
+        data: { Status: 'In_Progress', Actual_Start: new Date().toISOString() },
+      });
+    } catch (e) { /* non-critical */ }
+  }
+
+  // Start GPS watch
+  state.watchId = navigator.geolocation.watchPosition(
+    onGPSSuccess,
+    onGPSError,
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+  );
+
+  // Ping every 10 seconds
+  state.gpsInterval = setInterval(pingLocation, APP_CONFIG.gpsIntervalMs);
+  showToast('✅ Trip started — GPS tracking active');
+}
+
+async function stopTrip(btn) {
+  state.tripActive = false;
+  if (state.watchId !== null) { navigator.geolocation.clearWatch(state.watchId); state.watchId = null; }
+  if (state.gpsInterval) { clearInterval(state.gpsInterval); state.gpsInterval = null; }
+
+  btn.className = 'big-btn btn-start';
+  btn.innerHTML = `<svg width="28" height="28" fill="white" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> START TRIP`;
+
+  document.getElementById('trip-status-pill').className = 'status-pill status-idle';
+  document.getElementById('trip-status-pill').innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;"></span> IDLE`;
+  document.getElementById('gps-dot').style.background = 'var(--muted)';
+  document.getElementById('gps-dot').style.boxShadow = 'none';
+  document.getElementById('gps-status').textContent = 'Not tracking';
+
+  if (state.currentTrip?.ID) {
+    try {
+      await ZOHO.CREATOR.API.updateRecord({
+        appName: APP_CONFIG.appName,
+        reportName: 'All_Active_Timings',
+        id: state.currentTrip.ID,
+        data: { Status: 'Completed', Actual_End: new Date().toISOString(), Distance_Km: state.totalDistance.toFixed(2) },
+      });
+    } catch (e) { /* non-critical */ }
+  }
+
+  await syncOfflineScans();
+  showToast('✅ Trip ended. Distance: ' + state.totalDistance.toFixed(1) + ' km');
+}
+
+// ─────────────────────────────────────────────
+// GPS TRACKING
+// ─────────────────────────────────────────────
+let lastPingCoords = null;
+
+function onGPSSuccess(pos) {
+  const { latitude: lat, longitude: lng, speed } = pos.coords;
+  state.lastPosition = { lat, lng, ts: Date.now() };
+
+  document.getElementById('gps-coords').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  document.getElementById('gps-status').textContent = 'Tracking ✓';
+  document.getElementById('gps-speed').textContent = `Speed: ${speed ? (speed * 3.6).toFixed(1) + ' km/h' : 'calculating...'}`;
+
+  if (state.map && state.busMarker) {
+    state.busMarker.setLatLng([lat, lng]);
+    state.map.panTo([lat, lng]);
+  }
+
+  if (state.currentTrip) {
+    document.getElementById('incident-location').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  }
+}
+
+function onGPSError(err) {
+  console.warn('GPS error:', err);
+  document.getElementById('gps-status').textContent = 'GPS error: ' + err.message;
+}
+
+async function pingLocation() {
+  if (!state.lastPosition || !state.tripActive) return;
+  const { lat, lng } = state.lastPosition;
+  const tripId = state.currentTrip?.ID || 'unknown';
+
+  const pingData = {
+    Trip_ID: tripId,
+    Lat: lat.toString(),
+    Lng: lng.toString(),
+    Timestamp: new Date().toISOString(),
+    Driver_Email: state.driver?.email || '',
+  };
+
+  if (!state.isOnline) {
+    cacheOfflinePing(pingData);
+    return;
+  }
+
+  try {
+    await ZOHO.CREATOR.API.addRecord({
+      appName: APP_CONFIG.appName,
+      formName: APP_CONFIG.forms.trackingLogs,
+      data: pingData,
+    });
+    if (lastPingCoords) {
+      state.totalDistance += haversineKm(lastPingCoords.lat, lastPingCoords.lng, lat, lng);
+      document.getElementById('stat-dist').textContent = state.totalDistance.toFixed(1) + ' km';
+      const pct = Math.min(100, (state.totalDistance / 30) * 100);
+      document.getElementById('trip-progress').style.width = pct + '%';
+      document.getElementById('trip-pct').textContent = Math.round(pct) + '%';
+    }
+    lastPingCoords = { lat, lng };
+  } catch (e) {
+    cacheOfflinePing(pingData);
+  }
+}
+
+// ─────────────────────────────────────────────
+// QR SCANNER
+// ─────────────────────────────────────────────
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`screen-${name}`).classList.add('active');
+  document.getElementById(`tab-${name}`)?.classList.add('active');
+
+  if (name === 'scan') {
+    startScanner();
+  } else {
+    stopScanner();
+    if (name === 'trip' && state.map) {
+      setTimeout(() => state.map.invalidateSize(), 100);
+    }
+  }
+}
+
+function startScanner() {
+  if (state.scannerActive) return;
+  state.scannerActive = true;
+  document.getElementById('trip-status-pill').className = 'status-pill status-scanning';
+  document.getElementById('trip-status-pill').innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;"></span> SCANNING`;
+
+  state.qrScanner = new Html5Qrcode('html5-qr-scanner');
+  const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+  state.qrScanner.start(
+    { facingMode: 'environment' },
+    config,
+    onQRSuccess,
+    () => {}
+  ).catch(err => {
+    showToast('❌ Camera access denied: ' + err);
+    state.scannerActive = false;
+  });
+}
+
+function stopScanner() {
+  if (!state.scannerActive || !state.qrScanner) return;
+  state.qrScanner.stop().then(() => {
+    state.scannerActive = false;
+    if (state.tripActive) {
+      document.getElementById('trip-status-pill').className = 'status-pill status-active';
+      document.getElementById('trip-status-pill').innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;" class="pulse"></span> ACTIVE`;
+    } else {
+      document.getElementById('trip-status-pill').className = 'status-pill status-idle';
+      document.getElementById('trip-status-pill').innerHTML = `<span style="width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block;"></span> IDLE`;
+    }
+  }).catch(() => { state.scannerActive = false; });
+}
+
+async function onQRSuccess(decodedText) {
+  // Pause scanner briefly to prevent duplicate scans
+  state.qrScanner.pause();
+  setTimeout(() => { if (state.scannerActive && state.qrScanner) state.qrScanner.resume(); }, 2000);
+
+  let qrData;
+  try {
+    qrData = JSON.parse(decodedText);
+  } catch {
+    showScanResult('❌ Invalid QR Code', 'fail');
+    return;
+  }
+
+  const { hash, emp, trip } = qrData || {};
+  if (!hash || !emp || !trip) { showScanResult('❌ Invalid QR Code format', 'fail'); return; }
+
+  const tripId = state.currentTrip?.ID;
+  if (tripId && trip !== tripId) {
+    showScanResult('⚠️ QR for different trip', 'fail');
+    return;
+  }
+
+  if (!state.isOnline) {
+    cacheOfflineScan({ hash, emp, trip, scanned_at: new Date().toISOString(), driver: state.driver?.email });
+    showScanResult('📶 Offline — scan cached!', 'offline');
+    addToScanLog(emp, hash, 'offline');
+    document.getElementById('stat-pax').textContent = parseInt(document.getElementById('stat-pax').textContent) + 1;
+    return;
+  }
+
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.bookings,
+      criteria: `QR_Hash == "${hash}" && Status == "Confirmed"`,
+      max_records: 1,
+    });
+
+    if (resp.code === 3000 && resp.data?.length) {
+      const booking = resp.data[0];
+      await ZOHO.CREATOR.API.updateRecord({
+        appName: APP_CONFIG.appName,
+        reportName: APP_CONFIG.reports.bookings,
+        id: booking.ID,
+        data: { Status: 'Boarded', Boarded_At: new Date().toISOString(), Driver_Email: state.driver?.email },
+      });
+      showScanResult(`✅ ${booking.Employee_Name?.display_value || emp} — BOARDED`, 'ok');
+      addToScanLog(booking.Employee_Name?.display_value || emp, hash, 'ok');
+      state.passengerList = state.passengerList.map(p => p.QR_Hash === hash ? { ...p, Status: 'Boarded' } : p);
+      document.getElementById('stat-pax').textContent = parseInt(document.getElementById('stat-pax').textContent) + 1;
+      renderPassengerList();
+    } else {
+      showScanResult('❌ Booking not found or already used', 'fail');
+      addToScanLog(emp, hash, 'fail');
+    }
+  } catch (e) {
+    cacheOfflineScan({ hash, emp, trip, scanned_at: new Date().toISOString() });
+    showScanResult('📶 Network error — scan cached', 'offline');
+    addToScanLog(emp, hash, 'offline');
+  }
+}
+
+function showScanResult(msg, type) {
+  const banner = document.getElementById('scan-result-banner');
+  banner.style.display = 'block';
+  banner.className = `scan-result scan-${type === 'ok' ? 'ok' : type === 'fail' ? 'fail' : 'offline'}`;
+  banner.textContent = msg;
+  setTimeout(() => { banner.style.display = 'none'; }, 3000);
+}
+
+function addToScanLog(name, hash, status) {
+  state.scanLog.unshift({ name, hash, status, time: new Date().toLocaleTimeString() });
+  const log = document.getElementById('scan-log');
+  log.innerHTML = state.scanLog.map(s => `
+    <div class="pax-row">
+      <div class="scan-badge ${s.status === 'ok' ? 'scanned' : s.status === 'fail' ? 'not-scanned' : 'pending'}">
+        ${s.status === 'ok' ? '✓' : s.status === 'fail' ? '✗' : '⏳'}
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:0.85rem;font-weight:500;">${s.name}</div>
+        <div style="font-size:0.7rem;color:var(--muted);">${s.time} · ${s.hash.substring(0,14)}...</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─────────────────────────────────────────────
+// PASSENGER MANIFEST
+// ─────────────────────────────────────────────
+async function refreshManifest() {
+  if (!state.currentTrip?.ID) return;
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.bookings,
+      criteria: `Trip_ID == "${state.currentTrip.ID}" && Status != "Cancelled"`,
+    });
+    if (resp.code === 3000) {
+      state.passengerList = resp.data || [];
+      saveManifestOffline(state.passengerList);
+      renderPassengerList();
+    }
+  } catch (e) {
+    const cached = loadManifestOffline();
+    if (cached) { state.passengerList = cached; renderPassengerList(); }
+  }
+}
+
+function renderPassengerList() {
+  const list = document.getElementById('pax-list');
+  const boarded = state.passengerList.filter(p => p.Status === 'Boarded').length;
+  document.getElementById('stat-pax').textContent = boarded;
+  document.getElementById('pax-summary').textContent = `${boarded}/${state.passengerList.length} boarded`;
+
+  if (!state.passengerList.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.85rem;">No passengers booked yet</div>';
+    return;
+  }
+
+  list.innerHTML = state.passengerList.map(p => {
+    const name = p.Employee_Name?.display_value || p.Employee_ID || 'Passenger';
+    const isBoarded = p.Status === 'Boarded';
+    return `
+      <div class="pax-row">
+        <div class="pax-avatar">${name.charAt(0).toUpperCase()}</div>
+        <div style="flex:1;">
+          <div style="font-size:0.88rem;font-weight:600;">${name}</div>
+          <div style="font-size:0.73rem;color:var(--muted);">${p.HITS_ID || p.Employee_Email || '--'}</div>
+        </div>
+        <div class="scan-badge ${isBoarded ? 'scanned' : 'not-scanned'}" style="font-size:0.75rem;">
+          ${isBoarded ? '✓' : '–'}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// OFFLINE SUPPORT (IndexedDB / localStorage)
+// ─────────────────────────────────────────────
+function cacheOfflineScan(scanData) {
+  state.offlineQueue.push(scanData);
+  saveOfflineQueue();
+  updateOfflineQueueUI();
+}
+
+function cacheOfflinePing(pingData) {
+  const pings = JSON.parse(localStorage.getItem('ctms_offline_pings') || '[]');
+  pings.push(pingData);
+  localStorage.setItem('ctms_offline_pings', JSON.stringify(pings.slice(-200)));
+}
+
+function saveOfflineQueue() {
+  localStorage.setItem('ctms_offline_scans', JSON.stringify(state.offlineQueue));
+}
+
+function loadOfflineQueue() {
+  state.offlineQueue = JSON.parse(localStorage.getItem('ctms_offline_scans') || '[]');
+  updateOfflineQueueUI();
+}
+
+function saveManifestOffline(manifest) {
+  localStorage.setItem('ctms_manifest', JSON.stringify({ data: manifest, ts: Date.now() }));
+}
+
+function loadManifestOffline() {
+  const cached = JSON.parse(localStorage.getItem('ctms_manifest') || 'null');
+  return cached?.data || null;
+}
+
+function updateOfflineQueueUI() {
+  const el = document.getElementById('offline-queue-info');
+  const ct = document.getElementById('queue-count');
+  if (state.offlineQueue.length > 0) {
+    el.style.display = 'flex';
+    ct.textContent = state.offlineQueue.length;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function syncOfflineScans() {
+  if (!state.isOnline || !state.offlineQueue.length) return;
+  const queue = [...state.offlineQueue];
+  let synced = 0, failed = 0;
+
+  for (const scan of queue) {
+    try {
+      const resp = await ZOHO.CREATOR.API.getAllRecords({
+        appName: APP_CONFIG.appName,
+        reportName: APP_CONFIG.reports.bookings,
+        criteria: `QR_Hash == "${scan.hash}" && Status == "Confirmed"`,
+        max_records: 1,
+      });
+      if (resp.code === 3000 && resp.data?.length) {
+        await ZOHO.CREATOR.API.updateRecord({
+          appName: APP_CONFIG.appName,
+          reportName: APP_CONFIG.reports.bookings,
+          id: resp.data[0].ID,
+          data: { Status: 'Boarded', Boarded_At: scan.scanned_at, Synced_Offline: 'true' },
+        });
+        synced++;
+      } else { failed++; }
+    } catch (e) { failed++; }
+  }
+
+  state.offlineQueue = state.offlineQueue.slice(synced);
+  saveOfflineQueue();
+  updateOfflineQueueUI();
+  showToast(`✅ Synced ${synced} scans${failed > 0 ? `, ${failed} failed` : ''}`);
+
+  // Also sync GPS pings
+  const pings = JSON.parse(localStorage.getItem('ctms_offline_pings') || '[]');
+  for (const ping of pings.slice(0, 50)) {
+    try {
+      await ZOHO.CREATOR.API.addRecord({ appName: APP_CONFIG.appName, formName: APP_CONFIG.forms.trackingLogs, data: ping });
+    } catch (e) { /* skip */ }
+  }
+  localStorage.removeItem('ctms_offline_pings');
+}
+
+function handleOnline() {
+  state.isOnline = true;
+  document.getElementById('offline-alert').style.display = 'none';
+  document.getElementById('offline-indicator').style.display = 'none';
+  syncOfflineScans();
+}
+
+function handleOffline() {
+  state.isOnline = false;
+  document.getElementById('offline-alert').style.display = 'flex';
+  document.getElementById('offline-indicator').style.display = 'block';
+}
+
+// ─────────────────────────────────────────────
+// INCIDENT REPORTING
+// ─────────────────────────────────────────────
+async function submitIncident() {
+  const type = document.getElementById('incident-type').value;
+  const desc = document.getElementById('incident-desc').value;
+  const loc = document.getElementById('incident-location').value;
+
+  if (!desc.trim()) { showToast('Please describe the incident'); return; }
+
+  const payload = {
+    Driver_Email: state.driver?.email,
+    Trip_ID: state.currentTrip?.ID,
+    Incident_Type: type,
+    Description: desc,
+    Location_Coords: loc,
+    Timestamp: new Date().toISOString(),
+    Status: 'Open',
+  };
+
+  try {
+    await ZOHO.CREATOR.API.addRecord({ appName: APP_CONFIG.appName, formName: APP_CONFIG.forms.incidents, data: payload });
+    showToast('🚨 Incident reported — dispatchers notified');
+    document.getElementById('incident-desc').value = '';
+    showScreen('trip');
+  } catch (e) {
+    // Store offline
+    const incidents = JSON.parse(localStorage.getItem('ctms_incidents') || '[]');
+    incidents.push(payload);
+    localStorage.setItem('ctms_incidents', JSON.stringify(incidents));
+    showToast('📶 Incident saved offline — will sync when connected');
+  }
+}
+
+// ─────────────────────────────────────────────
+// EMERGENCY SOS
+// ─────────────────────────────────────────────
+async function triggerSOS() {
+  const pos = state.lastPosition;
+  const locStr = pos ? `${pos.lat.toFixed(5)},${pos.lng.toFixed(5)}` : 'Unknown';
+  if (!confirm('Send EMERGENCY SOS alert to dispatcher?\n\nLocation: ' + locStr)) return;
+
+  try {
+    await ZOHO.CREATOR.API.addRecord({
+      appName: APP_CONFIG.appName,
+      formName: APP_CONFIG.forms.incidents,
+      data: {
+        Driver_Email: state.driver?.email,
+        Trip_ID: state.currentTrip?.ID,
+        Incident_Type: 'SOS_EMERGENCY',
+        Description: 'DRIVER TRIGGERED EMERGENCY SOS',
+        Location_Coords: locStr,
+        Timestamp: new Date().toISOString(),
+        Status: 'Critical',
+        Priority: 'High',
+      },
+    });
+    showToast('🚨 SOS SENT — Dispatchers alerted!');
+  } catch (e) {
+    // Try Cliq webhook directly as fallback
+    fetch(APP_CONFIG.cliqWebhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: `🚨 EMERGENCY SOS from driver ${state.driver?.name} at ${locStr}. Trip: ${state.currentTrip?.ID}` }),
+    }).catch(() => {});
+    showToast('🚨 SOS signal sent via fallback channel');
+  }
+}
+
+// ─────────────────────────────────────────────
+// MAP
+// ─────────────────────────────────────────────
+function initMiniMap() {
+  const el = document.getElementById('map-mini');
+  if (!el || state.map) return;
+  state.map = L.map('map-mini', { zoomControl: false, attributionControl: false }).setView([30.0444, 31.2357], 13);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(state.map);
+  const busIcon = L.divIcon({ html: `<div style="width:28px;height:28px;background:#6366f1;border-radius:50%;border:3px solid white;"></div>`, iconSize:[28,28], iconAnchor:[14,14] });
+  state.busMarker = L.marker([30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
+}
+
+// ─────────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────────
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+</script>
+</body>
+</html>

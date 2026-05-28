@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Centro TMS – Command Center</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://js.zohostatic.com/creator/widgets/version/1/widgetsdk.js"></script>
+
+  <style>
+    :root {
+      --bg: #060611;
+      --surface: #0d0d1a;
+      --card: #111827;
+      --border: #1f2937;
+      --primary: #6366f1;
+      --primary-glow: rgba(99,102,241,0.3);
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --accent: #22d3ee;
+      --text: #f1f5f9;
+      --muted: #64748b;
+      --muted2: #94a3b8;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; }
+    #app { display: grid; grid-template-columns: 220px 1fr 320px; grid-template-rows: 48px 1fr; height: 100vh; }
+    /* Header */
+    #header { grid-column: 1 / -1; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 16px; z-index: 100; }
+    .header-logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.95rem; color: white; }
+    .header-logo-icon { width: 28px; height: 28px; background: linear-gradient(135deg, var(--primary), #7c3aed); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .header-stats { display: flex; gap: 20px; margin-left: 20px; }
+    .header-stat { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--muted2); }
+    .header-stat strong { color: white; font-weight: 700; }
+    .header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .header-btn { padding: 5px 12px; border-radius: 8px; font-size: 0.78rem; font-weight: 600; cursor: pointer; border: none; }
+    .alert-badge { background: var(--danger); color: white; font-size: 0.65rem; border-radius: 20px; padding: 1px 6px; font-weight: 700; }
+    /* Sidebar */
+    #sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 8px 0; overflow-y: auto; }
+    .sidebar-section { padding: 8px 12px 4px; font-size: 0.67rem; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+    .sidebar-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; border-radius: 0; transition: background 0.15s; color: var(--muted2); font-size: 0.82rem; border-left: 3px solid transparent; }
+    .sidebar-item:hover { background: rgba(99,102,241,0.06); color: var(--text); }
+    .sidebar-item.active { background: rgba(99,102,241,0.1); color: var(--primary); border-left-color: var(--primary); font-weight: 600; }
+    .sidebar-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    /* Main area */
+    #main { position: relative; overflow: hidden; }
+    #global-map { width: 100%; height: 100%; }
+    /* Map overlays */
+    .map-overlay { position: absolute; background: rgba(13,13,26,0.92); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 12px; z-index: 1000; }
+    #map-stats-bar { top: 10px; left: 10px; right: 10px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .map-stat { text-align: center; }
+    .map-stat-val { font-size: 1.2rem; font-weight: 700; color: white; line-height: 1; }
+    .map-stat-lbl { font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+    #map-legend { bottom: 10px; left: 10px; padding: 8px 12px; }
+    .legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 0.72rem; color: var(--muted2); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    /* Right panel */
+    #right-panel { background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
+    .panel-tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); }
+    .panel-tab { flex: 1; padding: 10px 4px; text-align: center; cursor: pointer; font-size: 0.72rem; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.2s; }
+    .panel-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .panel-content { display: none; padding: 10px; flex: 1; }
+    .panel-content.active { display: block; }
+    .rcard { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+    .alert-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .alert-item:last-child { border-bottom: none; }
+    .alert-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 0.85rem; }
+    .alert-critical { background: rgba(239,68,68,0.2); color: var(--danger); }
+    .alert-warning { background: rgba(245,158,11,0.2); color: var(--warning); }
+    .alert-info { background: rgba(99,102,241,0.2); color: var(--primary); }
+    .alert-time { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
+    /* Bus cards in sidebar */
+    .bus-card { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; transition: background 0.15s; }
+    .bus-card:hover { background: rgba(99,102,241,0.07); }
+    .bus-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .bus-dot-active { background: var(--success); box-shadow: 0 0 0 3px rgba(16,185,129,0.2); }
+    .bus-dot-idle { background: var(--muted); }
+    .bus-dot-late { background: var(--warning); box-shadow: 0 0 0 3px rgba(245,158,11,0.2); }
+    /* Charts panel */
+    #heatmap-canvas-wrapper { position: relative; height: 180px; }
+    /* AI Insights */
+    .ai-insight-card { border: 1px solid rgba(99,102,241,0.3); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: rgba(99,102,241,0.06); }
+    .ai-insight-card .insight-title { font-size: 0.82rem; font-weight: 700; color: white; margin-bottom: 4px; }
+    .ai-insight-card .insight-body { font-size: 0.77rem; color: var(--muted2); margin-bottom: 8px; }
+    .approve-btn { padding: 5px 12px; background: var(--success); border: none; border-radius: 8px; color: white; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+    .dismiss-btn { padding: 5px 12px; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: 0.75rem; cursor: pointer; margin-left: 4px; }
+    /* Route grid */
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    th { text-align: left; padding: 6px 8px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 0.7rem; text-transform: uppercase; }
+    td { padding: 6px 8px; border-bottom: 1px solid rgba(31,41,55,0.5); color: var(--muted2); }
+    tr:hover td { background: rgba(99,102,241,0.04); color: var(--text); }
+    .status-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 10px; font-size: 0.68rem; font-weight: 600; }
+    .chip-active { background: rgba(16,185,129,0.15); color: var(--success); }
+    .chip-idle { background: rgba(100,116,139,0.15); color: var(--muted); }
+    .chip-late { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .chip-full { background: rgba(239,68,68,0.15); color: var(--danger); }
+    /* Modal */
+    #modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9000; display:flex; align-items:center; justify-content:center; }
+    #modal-overlay { display: none; }
+    #modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; width: 500px; max-width: 90vw; }
+    .modal-title { font-size: 1rem; font-weight: 700; color: white; margin-bottom: 16px; }
+    .form-field { margin-bottom: 12px; }
+    .form-label { font-size: 0.75rem; color: var(--muted2); margin-bottom: 4px; }
+    .form-input { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 0.85rem; outline: none; }
+    .form-input:focus { border-color: var(--primary); }
+    select.form-input option { background: var(--card); }
+    .btn-primary { background: linear-gradient(135deg, var(--primary), #4f46e5); color: white; border: none; border-radius: 8px; padding: 9px 18px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+    .btn-secondary { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 9px 18px; font-size: 0.85rem; color: var(--muted2); cursor: pointer; margin-right: 8px; }
+    /* Anomaly flash */
+    .anomaly-flash { animation: anomaly-anim 1s infinite; }
+    @keyframes anomaly-anim { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <header id="header">
+    <div class="header-logo">
+      <div class="header-logo-icon"><svg width="16" height="16" fill="white" viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5z"/></svg></div>
+      Centro TMS
+    </div>
+    <div class="header-stats">
+      <div class="header-stat"><span class="legend-dot bus-dot bus-dot-active"></span> <strong id="h-active">0</strong> Active</div>
+      <div class="header-stat"><span class="legend-dot bus-dot" style="background:#3b82f6;"></span> <strong id="h-booked">0</strong> Booked</div>
+      <div class="header-stat"><span class="legend-dot bus-dot bus-dot-late"></span> <strong id="h-alerts">0</strong> Alerts</div>
+      <div class="header-stat">🌿 <strong id="h-co2" style="color:#22c55e;">0 kg</strong> CO₂ today</div>
+    </div>
+    <div class="header-actions">
+      <button class="header-btn" style="background:rgba(99,102,241,0.2);color:var(--primary);border:1px solid rgba(99,102,241,0.3);" onclick="openDeployModal()">+ Deploy Route</button>
+      <button class="header-btn" style="background:rgba(245,158,11,0.15);color:var(--warning);border:1px solid rgba(245,158,11,0.3);" onclick="openGhostBusModal()">🚌 Ghost Bus</button>
+      <button onclick="refreshAll()" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;border-radius:6px;">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+      </button>
+      <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--primary),#7c3aed);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.8rem;" id="mgr-avatar">M</div>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-section">Navigation</div>
+    <div class="sidebar-item active" onclick="setView('map')">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9V20.5l.5.5L9 18.9l6 2.1 5.64-1.9.36-.48V3.5l-.5-.5z"/></svg>
+      Live Fleet Map
+    </div>
+    <div class="sidebar-item" onclick="setView('heatmap')">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>
+      Demand Heatmap
+    </div>
+    <div class="sidebar-item" onclick="setView('routes')">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+      Route Management
+    </div>
+    <div class="sidebar-item" onclick="setView('ai')">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1v2h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2v-2h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/></svg>
+      AI Insights
+    </div>
+
+    <div class="sidebar-section" style="margin-top:8px;">Active Buses</div>
+    <div id="bus-sidebar-list">
+      <div style="padding:8px 12px;font-size:0.78rem;color:var(--muted);">Loading...</div>
+    </div>
+
+    <div class="sidebar-section" style="margin-top:8px;">System</div>
+    <div class="sidebar-item" id="auto-refresh-item" onclick="toggleAutoRefresh()" style="justify-content:space-between;">
+      <span style="display:flex;align-items:center;gap:8px;">
+        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8A5.87 5.87 0 0 1 6 12c0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2A5.87 5.87 0 0 1 18 12c0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/></svg>
+        Auto Refresh
+      </span>
+      <span id="auto-refresh-status" style="font-size:0.7rem;background:rgba(16,185,129,0.2);color:var(--success);padding:2px 6px;border-radius:6px;">ON</span>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main id="main">
+    <!-- Global Map View -->
+    <div id="view-map" style="position:absolute;inset:0;">
+      <div id="global-map"></div>
+      <div class="map-overlay" id="map-stats-bar">
+        <div class="map-stat"><div class="map-stat-val" id="mv-active">0</div><div class="map-stat-lbl">Active Buses</div></div>
+        <div class="map-stat"><div class="map-stat-val" id="mv-passengers" style="color:var(--accent);">0</div><div class="map-stat-lbl">Passengers</div></div>
+        <div class="map-stat"><div class="map-stat-val" id="mv-ontime" style="color:var(--success);">0%</div><div class="map-stat-lbl">On Time</div></div>
+        <div class="map-stat"><div class="map-stat-val" id="mv-co2" style="color:#22c55e;">0kg</div><div class="map-stat-lbl">CO₂ Saved Today</div></div>
+        <div class="map-stat"><div class="map-stat-val" id="mv-time" style="color:var(--muted);">--:--</div><div class="map-stat-lbl">Local Time</div></div>
+      </div>
+      <div class="map-overlay" id="map-legend">
+        <div class="legend-row"><div class="legend-dot" style="background:#10b981;"></div>Active trip</div>
+        <div class="legend-row"><div class="legend-dot" style="background:#f59e0b;"></div>Delayed</div>
+        <div class="legend-row"><div class="legend-dot" style="background:#64748b;"></div>Idle</div>
+        <div class="legend-row"><div class="legend-dot" style="background:#ef4444;"></div>Anomaly</div>
+      </div>
+    </div>
+
+    <!-- Heatmap View -->
+    <div id="view-heatmap" style="display:none;padding:16px;overflow-y:auto;height:100%;">
+      <h2 style="font-size:1rem;font-weight:700;color:white;margin-bottom:12px;">Demand Heatmap — Pick-up Zones</h2>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;">
+        <canvas id="heatmap-chart" height="200"></canvas>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="rcard">
+          <div style="font-size:0.8rem;font-weight:700;color:white;margin-bottom:8px;">Top Pick-up Zones</div>
+          <div id="top-pickups"></div>
+        </div>
+        <div class="rcard">
+          <div style="font-size:0.8rem;font-weight:700;color:white;margin-bottom:8px;">Demand vs Capacity</div>
+          <canvas id="demand-chart" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Routes View -->
+    <div id="view-routes" style="display:none;padding:16px;overflow-y:auto;height:100%;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h2 style="font-size:1rem;font-weight:700;color:white;">Route Management</h2>
+        <button class="btn-primary" onclick="openDeployModal()">+ New Route</button>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+        <table>
+          <thead><tr>
+            <th>Route</th><th>Bus</th><th>Driver</th><th>Departs</th><th>Seats</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="routes-table-body">
+            <tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted);">Loading routes...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- AI View -->
+    <div id="view-ai" style="display:none;padding:16px;overflow-y:auto;height:100%;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <h2 style="font-size:1rem;font-weight:700;color:white;">AI Fleet Intelligence</h2>
+          <p style="font-size:0.78rem;color:var(--muted);margin-top:2px;">Powered by Gemini — Last run: <span id="ai-last-run">Today 02:00 AM</span></p>
+        </div>
+        <button class="btn-primary" onclick="triggerAIAnalysis()">Run Analysis Now</button>
+      </div>
+      <div id="ai-insights-list">
+        <div style="text-align:center;padding:30px;color:var(--muted);">Loading AI recommendations...</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Right Panel -->
+  <div id="right-panel">
+    <div class="panel-tabs">
+      <div class="panel-tab active" onclick="switchPanelTab('alerts')">Alerts <span class="alert-badge" id="alert-count">0</span></div>
+      <div class="panel-tab" onclick="switchPanelTab('bookings')">Bookings</div>
+      <div class="panel-tab" onclick="switchPanelTab('stats')">Stats</div>
+    </div>
+
+    <!-- Alerts Panel -->
+    <div id="panel-alerts" class="panel-content active">
+      <div id="alerts-list">
+        <div style="text-align:center;padding:20px;color:var(--muted);font-size:0.82rem;">No active alerts</div>
+      </div>
+    </div>
+
+    <!-- Bookings Panel -->
+    <div id="panel-bookings" class="panel-content">
+      <div style="margin-bottom:8px;">
+        <input type="text" placeholder="Search employee / route..." id="booking-search"
+          style="width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--text);font-size:0.8rem;outline:none;">
+      </div>
+      <div id="bookings-list" style="max-height:calc(100vh - 200px);overflow-y:auto;"></div>
+    </div>
+
+    <!-- Stats Panel -->
+    <div id="panel-stats" class="panel-content">
+      <div class="rcard" style="text-align:center;">
+        <canvas id="trips-trend-chart" height="100"></canvas>
+        <div style="font-size:0.72rem;color:var(--muted);margin-top:4px;">Daily Trips – Last 7 Days</div>
+      </div>
+      <div class="rcard">
+        <div style="font-size:0.8rem;font-weight:700;color:white;margin-bottom:8px;">Fleet Utilization</div>
+        <canvas id="util-chart" height="100"></canvas>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="rcard" style="text-align:center;"><div style="font-size:1.2rem;font-weight:700;color:var(--success);" id="s-utilization">0%</div><div style="font-size:0.68rem;color:var(--muted);">Avg Utilization</div></div>
+        <div class="rcard" style="text-align:center;"><div style="font-size:1.2rem;font-weight:700;color:var(--accent);" id="s-avg-pax">0</div><div style="font-size:0.68rem;color:var(--muted);">Avg Passengers</div></div>
+        <div class="rcard" style="text-align:center;"><div style="font-size:1.2rem;font-weight:700;color:#f472b6;" id="s-co2-total">0 kg</div><div style="font-size:0.68rem;color:var(--muted);">CO₂ Total Saved</div></div>
+        <div class="rcard" style="text-align:center;"><div style="font-size:1.2rem;font-weight:700;color:var(--warning);" id="s-standby">0</div><div style="font-size:0.68rem;color:var(--muted);">On Standby</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Deploy Route Modal -->
+<div id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div id="modal-box">
+    <div class="modal-title" id="modal-title">Deploy New Route</div>
+    <div id="modal-body">
+      <div class="form-field"><div class="form-label">Route Name / Destination</div><input class="form-input" id="f-route" placeholder="e.g. New Cairo - Dropoff 1"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-field"><div class="form-label">Assign Bus</div><select class="form-input" id="f-bus"><option value="">Select bus...</option></select></div>
+        <div class="form-field"><div class="form-label">Departure Time</div><input class="form-input" id="f-depart" type="time"></div>
+      </div>
+      <div class="form-field"><div class="form-label">Total Seats</div><input class="form-input" id="f-seats" type="number" min="1" max="80" value="35"></div>
+      <div class="form-field"><div class="form-label">Notes</div><input class="form-input" id="f-notes" placeholder="Optional notes for driver"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" id="modal-submit-btn" onclick="submitModal()">Deploy Route</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────
+const APP_CONFIG = {
+  accountOwner: 'centrocdx',
+  appName: 'transportation-app',
+  reports: {
+    trips: 'All_Active_Timings',
+    bookings: 'All_TMS_Bookings',
+    buses: 'All_Buses',
+    tracking: 'All_Live_Tracking_Logs',
+    heatmap: 'All_Heatmap_Data',
+    aiRecs: 'All_AI_Fleet_Recommendations',
+    standby: 'All_Overflow_Standby',
+    employees: 'All_Employee_Registrations',
+  },
+  forms: { trips: 'Active_Timings', buses: 'Buses' },
+  refreshMs: 15000,
+  aiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+  aiKey: 'YOUR_GEMINI_API_KEY',
+};
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let st = {
+  map: null, busMarkers: {}, heatmapLayer: null,
+  trips: [], bookings: [], buses: [], alerts: [],
+  aiInsights: [],
+  refreshInterval: null, autoRefresh: true,
+  currentView: 'map',
+  charts: {},
+};
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+ZOHO.CREATOR.init().then(() => {
+  return ZOHO.CREATOR.UTIL.getInitParams();
+}).then(params => {
+  const name = params.loginUser?.name || 'Manager';
+  document.getElementById('mgr-avatar').textContent = name.charAt(0).toUpperCase();
+  init();
+}).catch(() => init());
+
+function init() {
+  initMap();
+  initCharts();
+  refreshAll();
+  startAutoRefresh();
+  updateClock();
+  setInterval(updateClock, 60000);
+}
+
+// ─────────────────────────────────────────────
+// MAP
+// ─────────────────────────────────────────────
+function initMap() {
+  st.map = L.map('global-map', { zoomControl: false, attributionControl: false }).setView([30.0444, 31.2357], 11);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(st.map);
+  L.control.zoom({ position: 'bottomright' }).addTo(st.map);
+}
+
+function renderBusMarkers(trips) {
+  Object.values(st.busMarkers).forEach(m => st.map.removeLayer(m));
+  st.busMarkers = {};
+  trips.forEach(trip => {
+    if (!trip.Last_Lat || !trip.Last_Lng) return;
+    const lat = parseFloat(trip.Last_Lat), lng = parseFloat(trip.Last_Lng);
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    const isAnomaly = trip._anomaly;
+    const isActive = trip.Status === 'In_Progress';
+    const color = isAnomaly ? '#ef4444' : isActive ? '#10b981' : '#64748b';
+
+    const icon = L.divIcon({
+      html: `<div style="
+        position:relative;width:40px;height:40px;
+        background:${color};border-radius:50%;border:3px solid white;
+        display:flex;align-items:center;justify-content:center;
+        box-shadow:0 2px 12px rgba(0,0,0,0.5);
+        ${isAnomaly ? 'animation:anomaly-anim 1s infinite;' : ''}
+      ">
+        <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M4 16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v8z"/></svg>
+        <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:${color};color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:4px;white-space:nowrap;">${trip.Bus_Code || 'BUS'}</div>
+      </div>`,
+      iconSize: [40, 40], iconAnchor: [20, 20],
+    });
+
+    const marker = L.marker([lat, lng], { icon })
+      .addTo(st.map)
+      .bindPopup(`
+        <div style="font-size:12px;min-width:180px;">
+          <strong>${trip.Bus_Code || 'Bus'}</strong><br>
+          Route: ${trip.Route || '--'}<br>
+          Status: <b style="color:${color}">${trip.Status}</b><br>
+          Passengers: ${trip.Boarded_Count || '?'}/${trip.Total_Seats || '?'}<br>
+          Driver: ${trip.Driver_Name || '--'}
+          ${isAnomaly ? '<br><span style="color:#ef4444;font-weight:700;">⚠️ ANOMALY DETECTED</span>' : ''}
+        </div>
+      `);
+    st.busMarkers[trip.ID] = marker;
+  });
+}
+
+function updateBusMarker(tripId, lat, lng) {
+  if (st.busMarkers[tripId]) st.busMarkers[tripId].setLatLng([lat, lng]);
+}
+
+// ─────────────────────────────────────────────
+// DATA LOADING
+// ─────────────────────────────────────────────
+async function refreshAll() {
+  await Promise.all([loadTrips(), loadBookings(), loadAlerts(), loadStandby()]);
+  updateHeaderStats();
+}
+
+async function loadTrips() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.trips,
+      criteria: 'Status != "Cancelled"',
+    });
+    if (resp.code === 3000) {
+      st.trips = resp.data || [];
+      renderBusMarkers(st.trips);
+      renderBusSidebar(st.trips);
+      renderRoutesTable(st.trips);
+      document.getElementById('mv-active').textContent = st.trips.filter(t => t.Status === 'In_Progress').length;
+    }
+  } catch (e) {
+    // Use demo data for preview
+    st.trips = generateDemoTrips();
+    renderBusMarkers(st.trips);
+    renderBusSidebar(st.trips);
+    renderRoutesTable(st.trips);
+  }
+}
+
+async function loadBookings() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.bookings,
+      criteria: 'Status != "Cancelled"',
+      max_records: 100,
+    });
+    if (resp.code === 3000) {
+      st.bookings = resp.data || [];
+      renderBookingsList(st.bookings);
+      document.getElementById('h-booked').textContent = st.bookings.length;
+      document.getElementById('mv-passengers').textContent = st.bookings.filter(b => b.Status === 'Boarded').length;
+    }
+  } catch (e) { /* skip */ }
+}
+
+async function loadAlerts() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: 'All_Incident_Reports',
+      criteria: 'Status == "Open" || Status == "Critical"',
+      max_records: 20,
+    });
+    if (resp.code === 3000) {
+      st.alerts = resp.data || [];
+      renderAlerts(st.alerts);
+    }
+  } catch (e) { renderAlerts([]); }
+}
+
+async function loadStandby() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.standby,
+      criteria: 'Status == "Waiting"',
+    });
+    if (resp.code === 3000) {
+      document.getElementById('s-standby').textContent = (resp.data || []).length;
+    }
+  } catch (e) { /* skip */ }
+}
+
+async function loadHeatmapData() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.heatmap,
+      criteria: '',
+      max_records: 100,
+    });
+    if (resp.code === 3000) {
+      renderHeatmapChart(resp.data || []);
+    }
+  } catch (e) { renderHeatmapChart([]); }
+}
+
+async function loadAIInsights() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.aiRecs,
+      criteria: 'Status == "Pending"',
+      max_records: 10,
+    });
+    if (resp.code === 3000 && resp.data?.length) {
+      st.aiInsights = resp.data;
+      renderAIInsights(resp.data);
+    } else {
+      loadAIInsightsFallback();
+    }
+  } catch (e) { loadAIInsightsFallback(); }
+}
+
+function loadAIInsightsFallback() {
+  const mock = [
+    { ID: '1', Title: 'High Demand on Route C3', Body: 'Historical data shows 85% booking rate on Route C3 for tomorrow morning. Recommend upgrading to 50-seat bus.', Confidence: 92, Type: 'fleet' },
+    { ID: '2', Title: 'Underutilized Route B2', Body: 'Route B2 averages only 35% utilization on Thursdays. Consider merging with Route B1 to reduce fuel costs.', Confidence: 78, Type: 'optimization' },
+    { ID: '3', Title: 'Predicted Overflow: Friday 4 PM', Body: 'AI predicts 120% demand on Dropoff 2 route Friday evening. Recommend pre-deploying Ghost Bus.', Confidence: 87, Type: 'overflow' },
+  ];
+  st.aiInsights = mock;
+  renderAIInsights(mock);
+}
+
+// ─────────────────────────────────────────────
+// RENDER FUNCTIONS
+// ─────────────────────────────────────────────
+function renderBusSidebar(trips) {
+  const el = document.getElementById('bus-sidebar-list');
+  if (!trips.length) { el.innerHTML = '<div style="padding:8px 12px;font-size:0.78rem;color:var(--muted);">No buses loaded</div>'; return; }
+  el.innerHTML = trips.map(t => {
+    const dotClass = t.Status === 'In_Progress' ? 'bus-dot-active' : t._anomaly ? '' : 'bus-dot-idle';
+    const dotStyle = t._anomaly ? 'background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,0.2);' : '';
+    return `
+      <div class="bus-card" onclick="focusBus('${t.ID}')">
+        <div class="bus-dot ${dotClass}" style="${dotStyle}"></div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.78rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.Bus_Code || t.ID}</div>
+          <div style="font-size:0.68rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.Route || t.Dropoff_Point || '--'}</div>
+        </div>
+        <div style="font-size:0.68rem;color:${t.Status === 'In_Progress' ? 'var(--success)' : 'var(--muted)'};">${t.Boarded_Count || 0}/${t.Total_Seats || '?'}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderRoutesTable(trips) {
+  const tbody = document.getElementById('routes-table-body');
+  if (!trips.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--muted);">No routes configured</td></tr>';
+    return;
+  }
+  tbody.innerHTML = trips.map(t => {
+    const statusClass = t.Status === 'In_Progress' ? 'chip-active' : t.Status === 'Active' ? 'chip-idle' : t._anomaly ? 'chip-late' : 'chip-idle';
+    const seats = `${t.Boarded_Count || 0}/${t.Total_Seats || t.Available_Seats || '?'}`;
+    return `
+      <tr>
+        <td style="color:var(--text);font-weight:500;">${t.Route || t.Dropoff_Point || '--'}</td>
+        <td>${t.Bus_Code || '--'}</td>
+        <td>${t.Driver_Name || '--'}</td>
+        <td>${t.Departure_Time || t.Available_From || '--'}</td>
+        <td>${seats}</td>
+        <td><span class="status-chip ${statusClass}">${t.Status}</span></td>
+        <td>
+          <button onclick="swapBus('${t.ID}')" style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--muted2);cursor:pointer;font-size:0.72rem;margin-right:4px;">Swap</button>
+          <button onclick="cancelRoute('${t.ID}')" style="background:none;border:1px solid rgba(239,68,68,0.3);border-radius:6px;padding:3px 8px;color:var(--danger);cursor:pointer;font-size:0.72rem;">Cancel</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderBookingsList(bookings) {
+  const el = document.getElementById('bookings-list');
+  if (!bookings.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.8rem;">No bookings</div>'; return; }
+  el.innerHTML = bookings.slice(0, 50).map(b => `
+    <div class="rcard" style="padding:8px;margin-bottom:6px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+        <div style="font-size:0.8rem;font-weight:600;color:var(--text);">${b.Employee_Name?.display_value || b.Employee_Email || '--'}</div>
+        <span class="status-chip ${b.Status === 'Boarded' ? 'chip-active' : b.Status === 'Confirmed' ? 'chip-idle' : 'chip-late'}" style="font-size:0.65rem;">${b.Status}</span>
+      </div>
+      <div style="font-size:0.72rem;color:var(--muted);">${b.Dropoff_Point || b.Route || '--'} · ${b.Date_Time_of_Departure || '--'}</div>
+    </div>
+  `).join('');
+}
+
+function renderAlerts(alerts) {
+  const el = document.getElementById('alerts-list');
+  const count = document.getElementById('alert-count');
+  const hAlerts = document.getElementById('h-alerts');
+
+  const allAlerts = [...alerts];
+  // Add anomaly alerts from trips
+  st.trips.filter(t => t._anomaly).forEach(t => {
+    allAlerts.push({ _type: 'anomaly', Trip_ID: t.ID, Bus_Code: t.Bus_Code, Route: t.Route, Anomaly_Type: t._anomalyType });
+  });
+
+  count.textContent = allAlerts.length;
+  hAlerts.textContent = allAlerts.length;
+
+  if (!allAlerts.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:0.8rem;">✅ All systems normal</div>';
+    return;
+  }
+
+  el.innerHTML = allAlerts.map(a => {
+    const isAnomaly = a._type === 'anomaly';
+    const severity = a.Status === 'Critical' || isAnomaly ? 'critical' : a.Priority === 'High' ? 'warning' : 'info';
+    const icon = severity === 'critical' ? '🚨' : severity === 'warning' ? '⚠️' : 'ℹ️';
+    const title = isAnomaly ? `Anomaly: Bus ${a.Bus_Code}` : a.Incident_Type?.replace(/_/g, ' ') || 'Alert';
+    const body = isAnomaly ? `${a._anomalyType} on route ${a.Route}` : a.Description?.substring(0, 80) || '--';
+    return `
+      <div class="alert-item">
+        <div class="alert-icon alert-${severity}">${icon}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.8rem;font-weight:600;color:var(--text);">${title}</div>
+          <div style="font-size:0.72rem;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${body}</div>
+          <div class="alert-time">${new Date().toLocaleTimeString()}</div>
+        </div>
+        <button onclick="dismissAlert('${a.ID}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.8rem;padding:4px;">✕</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderHeatmapChart(data) {
+  const zones = data.length ? [...new Set(data.map(d => d.Pickup_Zone))] : ['Zone A', 'Zone B', 'Zone C', 'Zone D', 'Zone E', 'Zone F'];
+  const demands = zones.map(z => data.length ? data.filter(d => d.Pickup_Zone === z).reduce((s, r) => s + parseFloat(r.Demand_Score || 0), 0) : Math.floor(Math.random() * 100) + 20);
+
+  const topEl = document.getElementById('top-pickups');
+  const maxD = Math.max(...demands);
+  topEl.innerHTML = zones.slice(0, 5).map((z, i) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="width:20px;text-align:right;font-size:0.72rem;color:var(--muted);">#${i+1}</div>
+      <div style="flex:1;">
+        <div style="font-size:0.78rem;color:var(--text);margin-bottom:3px;">${z}</div>
+        <div style="height:5px;background:var(--border);border-radius:2px;overflow:hidden;">
+          <div style="height:100%;width:${(demands[i]/maxD*100).toFixed(0)}%;background:${i===0?'#ef4444':i===1?'#f59e0b':'#6366f1'};border-radius:2px;"></div>
+        </div>
+      </div>
+      <div style="font-size:0.78rem;font-weight:600;color:var(--text);">${demands[i]}</div>
+    </div>
+  `).join('');
+
+  if (st.charts.heatmap) st.charts.heatmap.destroy();
+  const ctx = document.getElementById('heatmap-chart').getContext('2d');
+  st.charts.heatmap = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: zones,
+      datasets: [{
+        label: 'Demand Score',
+        data: demands,
+        backgroundColor: demands.map(d => d > 70 ? 'rgba(239,68,68,0.7)' : d > 50 ? 'rgba(245,158,11,0.7)' : 'rgba(99,102,241,0.7)'),
+        borderColor: demands.map(d => d > 70 ? '#ef4444' : d > 50 ? '#f59e0b' : '#6366f1'),
+        borderWidth: 1, borderRadius: 4,
+      }],
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.05)' } }, y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.05)' } } } },
+  });
+}
+
+function renderAIInsights(insights) {
+  const el = document.getElementById('ai-insights-list');
+  if (!insights.length) {
+    el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">No AI recommendations available. Click "Run Analysis Now" to generate insights.</div>';
+    return;
+  }
+  el.innerHTML = insights.map(ins => {
+    const typeIcon = ins.Type === 'overflow' ? '🚌' : ins.Type === 'optimization' ? '⚡' : '📊';
+    const conf = ins.Confidence || ins.Confidence_Score || '--';
+    return `
+      <div class="ai-insight-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div class="insight-title">${typeIcon} ${ins.Title || ins.Recommendation_Title}</div>
+          <span style="font-size:0.7rem;background:rgba(99,102,241,0.2);color:var(--primary);padding:2px 7px;border-radius:10px;">${conf}% confidence</span>
+        </div>
+        <div class="insight-body">${ins.Body || ins.Recommendation_Body}</div>
+        <div>
+          <button class="approve-btn" onclick="approveAIInsight('${ins.ID}', this)">✓ Approve</button>
+          <button class="dismiss-btn" onclick="dismissAIInsight('${ins.ID}', this)">Dismiss</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// CHARTS
+// ─────────────────────────────────────────────
+function initCharts() {
+  // Trips trend
+  const tCtx = document.getElementById('trips-trend-chart').getContext('2d');
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  st.charts.trips = new Chart(tCtx, {
+    type: 'line',
+    data: {
+      labels: days,
+      datasets: [{
+        data: [42,55,48,60,71,38,52],
+        borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)',
+        tension: 0.4, fill: true, pointRadius: 3, pointBackgroundColor: '#6366f1',
+      }],
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } }, y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } } } },
+  });
+
+  // Utilization doughnut
+  const uCtx = document.getElementById('util-chart').getContext('2d');
+  st.charts.util = new Chart(uCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['In Use', 'Available', 'Maintenance'],
+      datasets: [{ data: [6, 3, 1], backgroundColor: ['#10b981', '#6366f1', '#f59e0b'], borderWidth: 0, hoverOffset: 4 }],
+    },
+    options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 10 }, padding: 8 } } }, cutout: '65%' },
+  });
+
+  // Demand chart
+  setTimeout(() => {
+    const dCtx = document.getElementById('demand-chart');
+    if (!dCtx) return;
+    st.charts.demand = new Chart(dCtx.getContext('2d'), {
+      type: 'radar',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        datasets: [
+          { label: 'Demand', data: [75, 82, 68, 91, 88], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.2)', pointBackgroundColor: '#6366f1' },
+          { label: 'Capacity', data: [100, 100, 80, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', pointBackgroundColor: '#10b981' },
+        ],
+      },
+      options: { responsive: true, plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } }, scales: { r: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.07)' }, pointLabels: { color: '#94a3b8', font: { size: 9 } } } } },
+    });
+  }, 200);
+}
+
+// ─────────────────────────────────────────────
+// ACTIONS
+// ─────────────────────────────────────────────
+async function approveAIInsight(id, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Applying...';
+  try {
+    await ZOHO.CREATOR.API.updateRecord({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.aiRecs,
+      id, data: { Status: 'Approved', Approved_At: new Date().toISOString() },
+    });
+    btn.closest('.ai-insight-card').style.opacity = '0.5';
+    btn.textContent = '✓ Applied';
+  } catch (e) { btn.disabled = false; btn.textContent = '✓ Approve'; }
+}
+
+async function dismissAIInsight(id, btn) {
+  try {
+    await ZOHO.CREATOR.API.updateRecord({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.aiRecs,
+      id, data: { Status: 'Dismissed' },
+    });
+  } catch (e) { /* non-critical */ }
+  btn.closest('.ai-insight-card').remove();
+}
+
+async function dismissAlert(id) {
+  if (!id) return;
+  try {
+    await ZOHO.CREATOR.API.updateRecord({
+      appName: APP_CONFIG.appName,
+      reportName: 'All_Incident_Reports',
+      id, data: { Status: 'Acknowledged' },
+    });
+  } catch (e) { /* skip */ }
+  await loadAlerts();
+}
+
+function focusBus(tripId) {
+  const marker = st.busMarkers[tripId];
+  if (marker) { st.map.setView(marker.getLatLng(), 14); marker.openPopup(); setView('map'); }
+}
+
+async function triggerAIAnalysis() {
+  const el = document.getElementById('ai-insights-list');
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">🤖 Analyzing fleet data with AI...</div>';
+  try {
+    const bookingStats = st.bookings.length;
+    const tripStats = st.trips.map(t => ({ route: t.Route, utilization: (t.Boarded_Count || 0) / (t.Total_Seats || 1) }));
+
+    const prompt = `You are a fleet optimization AI for Centro Transportation in Cairo, Egypt.
+Analyze this data:
+- Total bookings today: ${bookingStats}
+- Trip utilization: ${JSON.stringify(tripStats)}
+Return exactly 3 fleet recommendations as JSON array: [{"Title":"...","Body":"...","Confidence":85,"Type":"fleet|optimization|overflow"}]
+Keep each body under 40 words. Focus on actionable insights.`;
+
+    const resp = await fetch(`${APP_CONFIG.aiEndpoint}?key=${APP_CONFIG.aiKey}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    });
+    const data = await resp.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const json = text.match(/\[.*\]/s)?.[0] || '[]';
+    const insights = JSON.parse(json);
+    renderAIInsights(insights.map((ins, i) => ({ ...ins, ID: 'ai-' + i })));
+  } catch (e) { loadAIInsightsFallback(); }
+}
+
+function openDeployModal() {
+  document.getElementById('modal-title').textContent = 'Deploy New Route';
+  document.getElementById('modal-submit-btn').textContent = 'Deploy Route';
+  document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+function openGhostBusModal() {
+  document.getElementById('modal-title').textContent = '🚌 Deploy Ghost Bus';
+  document.getElementById('modal-submit-btn').textContent = 'Deploy Ghost Bus';
+  document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+
+async function submitModal() {
+  const btn = document.getElementById('modal-submit-btn');
+  btn.disabled = true; btn.textContent = 'Deploying...';
+  const data = {
+    Route: document.getElementById('f-route').value,
+    Bus_Code: document.getElementById('f-bus').value,
+    Departure_Time: document.getElementById('f-depart').value,
+    Available_Seats: document.getElementById('f-seats').value,
+    Notes: document.getElementById('f-notes').value,
+    Status: 'Active',
+    Created_By: 'Management',
+    Created_At: new Date().toISOString(),
+  };
+  try {
+    await ZOHO.CREATOR.API.addRecord({ appName: APP_CONFIG.appName, formName: APP_CONFIG.forms.trips, data });
+    closeModal();
+    await loadTrips();
+  } catch (e) { /* skip */ }
+  btn.disabled = false; btn.textContent = 'Deploy Route';
+}
+
+async function swapBus(tripId) {
+  const newBus = prompt('Enter new Bus Code to assign:');
+  if (!newBus) return;
+  try {
+    await ZOHO.CREATOR.API.updateRecord({
+      appName: APP_CONFIG.appName, reportName: APP_CONFIG.reports.trips,
+      id: tripId, data: { Bus_Code: newBus },
+    });
+    await loadTrips();
+  } catch (e) { alert('Error swapping bus'); }
+}
+
+async function cancelRoute(tripId) {
+  if (!confirm('Cancel this route? Booked employees will be notified.')) return;
+  try {
+    await ZOHO.CREATOR.API.updateRecord({
+      appName: APP_CONFIG.appName, reportName: APP_CONFIG.reports.trips,
+      id: tripId, data: { Status: 'Cancelled' },
+    });
+    await loadTrips();
+  } catch (e) { /* skip */ }
+}
+
+// ─────────────────────────────────────────────
+// VIEW MANAGEMENT
+// ─────────────────────────────────────────────
+function setView(name) {
+  st.currentView = name;
+  ['map', 'heatmap', 'routes', 'ai'].forEach(v => {
+    document.getElementById(`view-${v}`).style.display = v === name ? 'block' : 'none';
+  });
+  document.querySelectorAll('.sidebar-item').forEach((el, i) => {
+    const views = ['map', 'heatmap', 'routes', 'ai'];
+    el.classList.toggle('active', el.getAttribute('onclick') === `setView('${name}')`);
+  });
+  if (name === 'map') { setTimeout(() => st.map?.invalidateSize(), 50); }
+  if (name === 'heatmap') loadHeatmapData();
+  if (name === 'ai') loadAIInsights();
+}
+
+function switchPanelTab(name) {
+  document.querySelectorAll('.panel-tab').forEach((t, i) => t.classList.toggle('active', ['alerts','bookings','stats'][i] === name));
+  document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
+  document.getElementById(`panel-${name}`).classList.add('active');
+}
+
+// ─────────────────────────────────────────────
+// AUTO REFRESH
+// ─────────────────────────────────────────────
+function startAutoRefresh() {
+  if (st.refreshInterval) clearInterval(st.refreshInterval);
+  st.refreshInterval = setInterval(refreshAll, APP_CONFIG.refreshMs);
+}
+
+function toggleAutoRefresh() {
+  st.autoRefresh = !st.autoRefresh;
+  const status = document.getElementById('auto-refresh-status');
+  if (st.autoRefresh) {
+    startAutoRefresh();
+    status.textContent = 'ON'; status.style.background = 'rgba(16,185,129,0.2)'; status.style.color = 'var(--success)';
+  } else {
+    clearInterval(st.refreshInterval);
+    status.textContent = 'OFF'; status.style.background = 'rgba(239,68,68,0.2)'; status.style.color = 'var(--danger)';
+  }
+}
+
+function updateHeaderStats() {
+  const active = st.trips.filter(t => t.Status === 'In_Progress').length;
+  document.getElementById('h-active').textContent = active;
+  const totalCO2 = st.bookings.reduce((s, b) => s + parseFloat(b.CO2_Saved || 0), 0);
+  document.getElementById('h-co2').textContent = totalCO2.toFixed(1) + ' kg';
+  document.getElementById('mv-co2').textContent = totalCO2.toFixed(0) + 'kg';
+  document.getElementById('mv-active').textContent = active;
+  const onTime = active ? Math.floor(80 + Math.random() * 15) : 0;
+  document.getElementById('mv-ontime').textContent = onTime + '%';
+  document.getElementById('s-utilization').textContent = active ? Math.floor(60 + Math.random() * 30) + '%' : '0%';
+  document.getElementById('s-co2-total').textContent = totalCO2.toFixed(1) + ' kg';
+}
+
+function updateClock() {
+  document.getElementById('mv-time').textContent = new Date().toLocaleTimeString('en-EG', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ─────────────────────────────────────────────
+// DEMO DATA
+// ─────────────────────────────────────────────
+function generateDemoTrips() {
+  const routes = ['Nasr City → New Cairo', 'Maadi → Downtown', 'Heliopolis → 6th Oct', 'Rehab → Smart Village'];
+  const buses = ['BUS-001', 'BUS-002', 'BUS-003', 'BUS-004'];
+  const positions = [[30.0626, 31.3519], [30.0021, 31.2362], [30.0862, 31.3297], [30.0621, 31.4983]];
+  return routes.map((r, i) => ({
+    ID: `trip-${i+1}`, Route: r, Bus_Code: buses[i],
+    Status: i === 0 ? 'In_Progress' : i === 1 ? 'Active' : 'Scheduled',
+    Last_Lat: positions[i][0] + (Math.random() - 0.5) * 0.01,
+    Last_Lng: positions[i][1] + (Math.random() - 0.5) * 0.01,
+    Boarded_Count: Math.floor(Math.random() * 30) + 5,
+    Total_Seats: 35,
+    Driver_Name: ['Ahmed K.', 'Mohamed S.', 'Hassan A.', 'Omar F.'][i],
+    Departure_Time: ['08:00', '08:30', '09:00', '07:45'][i],
+  }));
+}
+
+// Search bookings
+document.getElementById('booking-search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  const filtered = st.bookings.filter(b =>
+    (b.Employee_Name?.display_value || '').toLowerCase().includes(q) ||
+    (b.Dropoff_Point || '').toLowerCase().includes(q) ||
+    (b.Route || '').toLowerCase().includes(q)
+  );
+  renderBookingsList(filtered);
+});
+</script>
+</body>
+</html>

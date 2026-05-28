@@ -1,0 +1,188 @@
+/**
+ * SCHEDULED FUNCTION: Nightly AI Fleet Allocation (Predictive)
+ * Schedule: Every day at 02:00 AM (Cairo time)
+ * Purpose: Send 30-day historical data to Gemini AI, store tomorrow's optimized route assignments
+ */
+
+// ── Collect 30-day historical data ───────────────────────────────────────────
+thirtyDaysAgo = zoho.today.addDay(-30).toString("yyyy-MM-dd");
+tomorrow = zoho.today.addDay(1).toString("yyyy-MM-dd");
+tomorrowDow = zoho.today.addDay(1).dayOfWeek(); // 1=Mon, 7=Sun
+
+// Historical bookings
+historicalBookings = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_TMS_Bookings",
+    "Booking_Time >= " + '"' + thirtyDaysAgo + '"',
+    "max_records=200"
+);
+
+// Historical heatmap
+heatmapData = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Heatmap_Data",
+    "Timestamp >= " + '"' + thirtyDaysAgo + '"',
+    "max_records=200"
+);
+
+// Available buses
+buses = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Buses",
+    "Status != \"Maintenance\""
+);
+
+// ── Aggregate data for AI payload ─────────────────────────────────────────────
+routeStats = map();
+for each booking in historicalBookings {
+    route = booking.get("Dropoff_Point");
+    if (route.isNull()) { route = booking.get("Route"); }
+    if (route.isNull()) { continue; }
+
+    if (!routeStats.containsKey(route)) {
+        rs = map();
+        rs.put("total_bookings", 0);
+        rs.put("mon", 0); rs.put("tue", 0); rs.put("wed", 0);
+        rs.put("thu", 0); rs.put("fri", 0); rs.put("sat", 0); rs.put("sun", 0);
+        routeStats.put(route, rs);
+    }
+    rs = routeStats.get(route);
+    rs.put("total_bookings", rs.get("total_bookings").toLong() + 1);
+
+    // Day of week tracking
+    bookingTs = booking.get("Booking_Time");
+    if (!bookingTs.isNull()) {
+        dow = bookingTs.toDateTime().dayOfWeek();
+        dayKey = (dow == 1 ? "mon" : dow == 2 ? "tue" : dow == 3 ? "wed" : dow == 4 ? "thu" : dow == 5 ? "fri" : dow == 6 ? "sat" : "sun");
+        rs.put(dayKey, rs.get(dayKey).toLong() + 1);
+    }
+    routeStats.put(route, rs);
+}
+
+// Available bus info
+busInfo = list();
+for each bus in buses {
+    bi = map();
+    bi.put("code", bus.get("Bus_Code"));
+    bi.put("capacity", bus.get("Capacity").toLong());
+    bi.put("id", bus.get("ID"));
+    busInfo.add(bi);
+}
+
+// ── Build AI prompt ───────────────────────────────────────────────────────────
+tomorrowDowName = (tomorrowDow == 1 ? "Monday" : tomorrowDow == 2 ? "Tuesday" : tomorrowDow == 3 ? "Wednesday" : tomorrowDow == 4 ? "Thursday" : tomorrowDow == 5 ? "Friday" : tomorrowDow == 6 ? "Saturday" : "Sunday");
+
+promptPayload = map();
+routeStatsForAI = list();
+for each routeEntry in routeStats.entrySet() {
+    rs = routeEntry.getValue();
+    routeItem = map();
+    routeItem.put("route", routeEntry.getKey());
+    routeItem.put("avg_daily", (rs.get("total_bookings").toDecimal() / 30.0).setScale(1));
+    dowKey = (tomorrowDow == 1 ? "mon" : tomorrowDow == 2 ? "tue" : tomorrowDow == 3 ? "wed" : tomorrowDow == 4 ? "thu" : tomorrowDow == 5 ? "fri" : tomorrowDow == 6 ? "sat" : "sun");
+    routeItem.put("predicted_tomorrow", rs.get(dowKey));
+    routeStatsForAI.add(routeItem);
+}
+
+aiPrompt = "You are a fleet optimization AI for Centro Transportation Company in Cairo, Egypt. " +
+    "Tomorrow is " + tomorrowDowName + " (" + tomorrow + "). " +
+    "Based on 30-day historical booking data by route, recommend the optimal bus assignment for tomorrow. " +
+    "Available buses: " + busInfo.toString() + ". " +
+    "Route demand data: " + routeStatsForAI.toString() + ". " +
+    "Return a JSON array of assignments: " +
+    "[{\"route\":\"...\",\"recommended_bus\":\"BUS-XXX\",\"expected_demand\":N,\"confidence\":85,\"reason\":\"...\"}] " +
+    "Prioritize higher-capacity buses for higher-demand routes. Keep reasons under 20 words.";
+
+// ── Call Gemini API ───────────────────────────────────────────────────────────
+geminiKey = zoho.encryption.urlDecode("YOUR_GEMINI_KEY_FROM_ZOHO_SECRETS"); // Use Zoho Secrets Manager
+geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + geminiKey;
+
+aiRequestBody = map();
+contents = list();
+part = map();
+part.put("text", aiPrompt);
+parts = list();
+parts.add(part);
+contentItem = map();
+contentItem.put("parts", parts);
+contents.add(contentItem);
+aiRequestBody.put("contents", contents);
+
+aiResponse = invokeurl
+[
+    url: geminiUrl
+    type: POST
+    parameters: aiRequestBody.toString()
+    content-type: "application/json"
+];
+
+// ── Parse AI response ─────────────────────────────────────────────────────────
+aiText = "";
+if (!aiResponse.isNull()) {
+    candidates = aiResponse.get("candidates");
+    if (!candidates.isNull() && candidates.size() > 0) {
+        aiText = candidates.get(0).get("content").get("parts").get(0).get("text");
+    }
+}
+
+assignmentsJson = aiText.substring(aiText.indexOf("["), aiText.lastIndexOf("]") + 1);
+assignments = list();
+if (!assignmentsJson.isEmpty()) {
+    assignments = assignmentsJson.toJSONList();
+}
+
+// Fallback to rule-based if AI fails
+if (assignments.isEmpty()) {
+    for each routeEntry in routeStats.entrySet() {
+        rs = routeEntry.getValue();
+        dowKey = (tomorrowDow == 1 ? "mon" : tomorrowDow == 2 ? "tue" : "wed");
+        predicted = rs.get(dowKey).toLong();
+        assignment = map();
+        assignment.put("route", routeEntry.getKey());
+        assignment.put("expected_demand", predicted);
+        assignment.put("recommended_bus", predicted > 30 ? "Large Bus (50 seats)" : "Standard Bus (35 seats)");
+        assignment.put("confidence", 70);
+        assignment.put("reason", "Rule-based fallback: historical " + dowKey + " demand");
+        assignments.add(assignment);
+    }
+}
+
+// ── Save AI Fleet Recommendations ────────────────────────────────────────────
+savedRecs = 0;
+for each assignment in assignments {
+    recData = map();
+    recData.put("Recommendation_Title", "Tomorrow: " + assignment.get("route") + " → " + assignment.get("recommended_bus"));
+    recData.put("Recommendation_Body", "Expected " + assignment.get("expected_demand") + " passengers. " + assignment.get("reason"));
+    recData.put("Priority", assignment.get("expected_demand").toLong() > 30 ? "High" : "Medium");
+    recData.put("Confidence_Score", assignment.get("confidence"));
+    recData.put("Type", "fleet");
+    recData.put("Route", assignment.get("route"));
+    recData.put("Demand_Count", assignment.get("expected_demand"));
+    recData.put("Recommended_Bus", assignment.get("recommended_bus"));
+    recData.put("Status", "Pending");
+    recData.put("Target_Date", tomorrow);
+    recData.put("Generated_At", zoho.currenttime);
+    recData.put("Analysis_Type", "AI_Nightly");
+
+    zoho.creator.createRecord("centrocdx", "transportation-app", "AI_Fleet_Recommendations", recData);
+    savedRecs = savedRecs + 1;
+}
+
+// ── Post morning briefing to Cliq ─────────────────────────────────────────────
+morningBriefing = "🤖 *AI Fleet Briefing for " + tomorrow + " (" + tomorrowDowName + ")*\n\n" +
+    "📊 " + savedRecs + " route assignments generated\n" +
+    "🚌 Routes analyzed: " + routeStats.size() + "\n\n" +
+    "*Top predictions:*\n";
+
+highPriority = assignments.filter(a -> a.get("expected_demand").toLong() > 25);
+for each hp in highPriority {
+    morningBriefing = morningBriefing + "• " + hp.get("route") + ": " + hp.get("expected_demand") + " pax → " + hp.get("recommended_bus") + "\n";
+}
+
+morningBriefing = morningBriefing + "\n✅ Approve in Management Dashboard → AI Insights";
+zoho.cliq.postToChannel("transportation-ops", morningBriefing);
+
+info "Nightly AI Fleet: " + savedRecs + " recommendations saved for " + tomorrow;

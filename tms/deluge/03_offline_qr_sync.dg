@@ -1,0 +1,158 @@
+/**
+ * CUSTOM FUNCTION: Offline QR Boarding Sync API
+ * Type: API-enabled Custom Function (Stateless)
+ * URL: https://creator.zoho.com/api/v2/centrocdx/transportation-app/form/Bookings/record/custom/syncOfflineScans
+ * Method: POST
+ * Body: { "scans": [{"hash":"CTMS-XXXX","emp":"email","trip":"trip_id","scanned_at":"ISO","offline":true}] }
+ *
+ * Input Parameters:
+ *   scans (String) - JSON array of offline scan objects
+ */
+
+// ── Parse incoming scan batch ─────────────────────────────────────────────────
+scansJson = input.get("scans");
+if (scansJson.isNull() || scansJson.isEmpty()) {
+    response = map();
+    response.put("status", "error");
+    response.put("message", "No scans provided");
+    return response;
+}
+
+scanList = scansJson.toJSONList();
+results = list();
+successCount = 0;
+failCount = 0;
+duplicateCount = 0;
+
+// ── Process each scan ─────────────────────────────────────────────────────────
+for each scan in scanList {
+    qrHash = scan.get("hash");
+    empEmail = scan.get("emp");
+    tripId = scan.get("trip");
+    scannedAt = scan.get("scanned_at");
+    isOffline = scan.get("offline");
+    driverEmail = scan.get("driver");
+
+    scanResult = map();
+    scanResult.put("hash", qrHash);
+    scanResult.put("email", empEmail);
+
+    if (qrHash.isNull() || empEmail.isNull()) {
+        scanResult.put("status", "error");
+        scanResult.put("message", "Missing hash or email");
+        failCount = failCount + 1;
+        results.add(scanResult);
+        continue;
+    }
+
+    // ── Find booking by QR hash ───────────────────────────────────────────────
+    bookings = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_TMS_Bookings",
+        "QR_Hash == " + '"' + qrHash + '"'
+    );
+
+    if (bookings.isEmpty()) {
+        // Try legacy form
+        bookings = zoho.creator.getRecords(
+            "centrocdx",
+            "transportation-app",
+            "All_Bookings",
+            "QR_Hash == " + '"' + qrHash + '"'
+        );
+    }
+
+    if (bookings.isEmpty()) {
+        scanResult.put("status", "not_found");
+        scanResult.put("message", "QR hash not found in system");
+        failCount = failCount + 1;
+        results.add(scanResult);
+        continue;
+    }
+
+    booking = bookings.get(0);
+    currentStatus = booking.get("Status");
+    bookingId = booking.get("ID");
+
+    // ── Check if already boarded ──────────────────────────────────────────────
+    if (currentStatus == "Boarded") {
+        scanResult.put("status", "duplicate");
+        scanResult.put("message", "Passenger already boarded");
+        scanResult.put("booking_id", bookingId);
+        duplicateCount = duplicateCount + 1;
+        results.add(scanResult);
+        continue;
+    }
+
+    // ── Validate booking status ───────────────────────────────────────────────
+    if (currentStatus == "Cancelled") {
+        scanResult.put("status", "cancelled");
+        scanResult.put("message", "Booking was cancelled");
+        failCount = failCount + 1;
+        results.add(scanResult);
+        continue;
+    }
+
+    // ── Validate trip match ───────────────────────────────────────────────────
+    bookingTripId = booking.get("Trip_ID");
+    if (!tripId.isNull() && !bookingTripId.isNull() && tripId != bookingTripId.toString()) {
+        scanResult.put("status", "wrong_trip");
+        scanResult.put("message", "QR code belongs to a different trip");
+        failCount = failCount + 1;
+        results.add(scanResult);
+        continue;
+    }
+
+    // ── Update booking to Boarded ─────────────────────────────────────────────
+    updateData = map();
+    updateData.put("Status", "Boarded");
+    updateData.put("Boarded_At", scannedAt);
+    updateData.put("Driver_Email", driverEmail);
+    updateData.put("Synced_From_Offline", "true");
+    updateData.put("Sync_Time", zoho.currenttime);
+
+    updateResp = zoho.creator.updateRecord(
+        "centrocdx",
+        "transportation-app",
+        "All_TMS_Bookings",
+        bookingId,
+        updateData
+    );
+
+    if (updateResp.get("code") == 3000) {
+        scanResult.put("status", "success");
+        scanResult.put("message", "Boarding confirmed");
+        scanResult.put("booking_id", bookingId);
+        scanResult.put("passenger", booking.get("Employee_Name"));
+        successCount = successCount + 1;
+    } else {
+        scanResult.put("status", "error");
+        scanResult.put("message", "Update failed: " + updateResp.toString());
+        failCount = failCount + 1;
+    }
+
+    results.add(scanResult);
+}
+
+// ── Build response ────────────────────────────────────────────────────────────
+responseMap = map();
+responseMap.put("status", "completed");
+responseMap.put("total", scanList.size());
+responseMap.put("success", successCount);
+responseMap.put("failed", failCount);
+responseMap.put("duplicates", duplicateCount);
+responseMap.put("results", results);
+responseMap.put("processed_at", zoho.currenttime.toString());
+
+// ── Post sync summary to Cliq ─────────────────────────────────────────────────
+if (successCount > 0) {
+    syncMsg = "📶 *Offline scan sync complete*\n" +
+        "✅ " + successCount + " passengers marked as boarded\n" +
+        "❌ " + failCount + " failed\n" +
+        "🔁 " + duplicateCount + " duplicates skipped\n" +
+        "Driver: " + (scanList.get(0).get("driver") isNull ? "Unknown" : scanList.get(0).get("driver"));
+    zoho.cliq.postToChannel("transportation-ops", syncMsg);
+}
+
+return responseMap;

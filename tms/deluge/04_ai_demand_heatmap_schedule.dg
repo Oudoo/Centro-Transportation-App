@@ -1,0 +1,191 @@
+/**
+ * SCHEDULED FUNCTION: AI Demand Heatmap & Smart Fleet Allocation
+ * Schedule: Every 1 hour
+ * Purpose: Analyze bookings + heatmap data, recommend bus assignments
+ */
+
+// ── Fetch today's booking data ────────────────────────────────────────────────
+today = zoho.today.toString("yyyy-MM-dd");
+tomorrow = zoho.today.addDay(1).toString("yyyy-MM-dd");
+
+todayBookings = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_TMS_Bookings",
+    "Booking_Time >= " + '"' + today + '"'
+);
+
+// Fallback to legacy form
+if (todayBookings.isEmpty()) {
+    todayBookings = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_Bookings",
+        "Added_Time >= " + '"' + today + '"'
+    );
+}
+
+// ── Aggregate demand by route ─────────────────────────────────────────────────
+routeDemand = map();
+for each booking in todayBookings {
+    route = booking.get("Dropoff_Point");
+    if (route.isNull()) { route = booking.get("Route"); }
+    if (route.isNull()) { continue; }
+
+    if (routeDemand.containsKey(route)) {
+        routeDemand.put(route, routeDemand.get(route) + 1);
+    } else {
+        routeDemand.put(route, 1);
+    }
+}
+
+// ── Fetch active trips and their capacity ─────────────────────────────────────
+activeTrips = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Active_Timings",
+    "Status != \"Cancelled\""
+);
+
+tripCapacity = map();
+for each trip in activeTrips {
+    route = trip.get("Route");
+    if (route.isNull()) { route = trip.get("Dropoff_Point"); }
+    if (route.isNull()) { continue; }
+
+    seats = trip.get("Available_Seats").toLong();
+    totalSeats = trip.get("Total_Seats").toLong();
+    if (totalSeats.isNull() || totalSeats == 0) { totalSeats = trip.get("Number_of_Seats").toLong(); }
+    if (totalSeats.isNull() || totalSeats == 0) { totalSeats = 35; }
+
+    existingData = tripCapacity.get(route);
+    if (existingData.isNull()) {
+        routeData = map();
+        routeData.put("total_seats", totalSeats);
+        routeData.put("available", seats);
+        routeData.put("trip_id", trip.get("ID"));
+        tripCapacity.put(route, routeData);
+    }
+}
+
+// ── Generate recommendations ──────────────────────────────────────────────────
+recommendations = list();
+for each routeEntry in routeDemand.entrySet() {
+    route = routeEntry.getKey();
+    demand = routeEntry.getValue().toLong();
+
+    capacityData = tripCapacity.get(route);
+    if (capacityData.isNull()) {
+        // No trip configured for this high-demand route
+        recData = map();
+        recData.put("Recommendation_Title", "New Route Needed: " + route);
+        recData.put("Recommendation_Body", demand + " employees booked for " + route + " but no bus assigned. Deploy a bus immediately.");
+        recData.put("Priority", "High");
+        recData.put("Confidence_Score", 95);
+        recData.put("Type", "missing_route");
+        recData.put("Route", route);
+        recData.put("Demand_Count", demand);
+        recommendations.add(recData);
+        continue;
+    }
+
+    totalSeats = capacityData.get("total_seats").toLong();
+    utilizationPct = (demand.toDecimal() / totalSeats.toDecimal() * 100).toLong();
+
+    if (utilizationPct >= 90) {
+        // Overflow likely — recommend larger bus
+        recData = map();
+        recData.put("Recommendation_Title", "⚠️ Overflow Risk: " + route);
+        recData.put("Recommendation_Body", route + " is at " + utilizationPct + "% capacity (" + demand + "/" + totalSeats + " seats). Recommend deploying additional bus or upgrading to larger vehicle.");
+        recData.put("Priority", "Critical");
+        recData.put("Confidence_Score", 88);
+        recData.put("Type", "overflow");
+        recData.put("Route", route);
+        recData.put("Utilization_Pct", utilizationPct);
+        recData.put("Demand_Count", demand);
+        recData.put("Trip_ID", capacityData.get("trip_id"));
+        recommendations.add(recData);
+
+    } else if (utilizationPct <= 30) {
+        // Underutilized — recommend smaller bus or route merger
+        recData = map();
+        recData.put("Recommendation_Title", "⚡ Low Utilization: " + route);
+        recData.put("Recommendation_Body", route + " is only " + utilizationPct + "% full (" + demand + "/" + totalSeats + "). Consider merging with adjacent route to reduce fuel cost.");
+        recData.put("Priority", "Low");
+        recData.put("Confidence_Score", 75);
+        recData.put("Type", "optimization");
+        recData.put("Route", route);
+        recData.put("Utilization_Pct", utilizationPct);
+        recData.put("Trip_ID", capacityData.get("trip_id"));
+        recommendations.add(recData);
+    }
+}
+
+// ── Save recommendations to Creator ──────────────────────────────────────────
+savedCount = 0;
+for each rec in recommendations {
+    // Check for existing pending recommendation for this route to avoid duplicates
+    existing = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_AI_Fleet_Recommendations",
+        "Route == " + '"' + rec.get("Route") + '"' + " && Status == \"Pending\""
+    );
+
+    if (!existing.isEmpty()) { continue; } // Skip duplicate
+
+    recToSave = map();
+    recToSave.put("Recommendation_Title", rec.get("Recommendation_Title"));
+    recToSave.put("Recommendation_Body", rec.get("Recommendation_Body"));
+    recToSave.put("Priority", rec.get("Priority"));
+    recToSave.put("Confidence_Score", rec.get("Confidence_Score"));
+    recToSave.put("Type", rec.get("Type"));
+    recToSave.put("Route", rec.get("Route"));
+    recToSave.put("Demand_Count", rec.get("Demand_Count"));
+    recToSave.put("Trip_ID", rec.get("Trip_ID"));
+    recToSave.put("Utilization_Pct", rec.get("Utilization_Pct"));
+    recToSave.put("Status", "Pending");
+    recToSave.put("Generated_At", zoho.currenttime);
+    recToSave.put("Analysis_Type", "Hourly_Demand");
+
+    zoho.creator.createRecord("centrocdx", "transportation-app", "AI_Fleet_Recommendations", recToSave);
+    savedCount = savedCount + 1;
+}
+
+// ── Update heatmap scores ─────────────────────────────────────────────────────
+for each routeEntry in routeDemand.entrySet() {
+    route = routeEntry.getKey();
+    demand = routeEntry.getValue().toLong();
+
+    existingHeat = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_Heatmap_Data",
+        "Dropoff_Zone == " + '"' + route + '"' + " && Timestamp >= " + '"' + today + '"'
+    );
+
+    heatData = map();
+    heatData.put("Dropoff_Zone", route);
+    heatData.put("Demand_Score", demand);
+    heatData.put("Timestamp", zoho.currenttime);
+
+    if (existingHeat.isEmpty()) {
+        zoho.creator.createRecord("centrocdx", "transportation-app", "Heatmap_Data", heatData);
+    } else {
+        heatData.put("Demand_Score", demand);
+        zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Heatmap_Data", existingHeat.get(0).get("ID"), heatData);
+    }
+}
+
+// ── Notify management if critical recommendations found ───────────────────────
+criticalRecs = recommendations.filter(r -> r.get("Priority") == "Critical");
+if (criticalRecs.size() > 0) {
+    alertMsg = "🚨 *Fleet Alert — " + criticalRecs.size() + " critical recommendations*\n\n";
+    for each rec in criticalRecs {
+        alertMsg = alertMsg + "• " + rec.get("Recommendation_Title") + "\n";
+    }
+    alertMsg = alertMsg + "\nReview in Management Dashboard → AI Insights tab.";
+    zoho.cliq.postToChannel("transportation-ops", alertMsg);
+}
+
+info "AI Demand Analysis: " + recommendations.size() + " recommendations, " + savedCount + " saved.";

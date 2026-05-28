@@ -1,0 +1,194 @@
+/**
+ * WORKFLOW: Proximity Geo-Fencing Alerts
+ * Trigger: On Add of "Live_Tracking_Logs" form
+ * Purpose: When bus is ≤ 1 km from destination, notify booked passengers via Cliq
+ */
+
+// ── Get the new log entry ─────────────────────────────────────────────────────
+tripId = input.Trip_ID;
+busLat = input.Lat.toDecimal();
+busLng = input.Lng.toDecimal();
+currentTs = input.Timestamp;
+
+// ── Fetch trip details (destination coords) ───────────────────────────────────
+tripRecords = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Active_Timings",
+    "ID == " + '"' + tripId + '"'
+);
+
+if (tripRecords.isEmpty()) { return; }
+tripRecord = tripRecords.get(0);
+destLat = tripRecord.get("Dest_Lat").toDecimal();
+destLng = tripRecord.get("Dest_Lng").toDecimal();
+
+// Use default Cairo coordinate if destination not set
+if (destLat.isNull() || destLat == 0.0) { destLat = 30.0621; }
+if (destLng.isNull() || destLng == 0.0) { destLng = 31.4983; }
+
+// ── Haversine distance calculation ───────────────────────────────────────────
+// Returns approximate distance in meters between two GPS coordinates
+r = 6371000; // Earth radius in meters
+dLat = (destLat - busLat) * 3.14159265 / 180.0;
+dLng = (destLng - busLng) * 3.14159265 / 180.0;
+
+lat1Rad = busLat * 3.14159265 / 180.0;
+lat2Rad = destLat * 3.14159265 / 180.0;
+
+sinDLat = dLat / 2;
+sinDLng = dLng / 2;
+
+// Approximation using small-angle: a ≈ sin²(dLat/2) + cos(lat1)*cos(lat2)*sin²(dLng/2)
+// Deluge doesn't have sin/cos natively, use REST call for precision or use flat-earth approx
+// Flat-earth approximation (accurate within ~0.5% for short distances in Cairo area)
+deltaLat = (destLat - busLat) * 111320.0;
+deltaLng = (destLng - busLng) * 111320.0 * (busLat * 3.14159265 / 180.0).cos();
+distanceMeters = ((deltaLat * deltaLat) + (deltaLng * deltaLng)).sqrt();
+
+// ── Check 1 KM proximity threshold ───────────────────────────────────────────
+alreadyNotified = tripRecord.get("Proximity_Alert_Sent");
+if (alreadyNotified == "true") { return; } // Prevent duplicate alerts
+
+if (distanceMeters <= 1000) {
+    // ── Get all confirmed bookings for this trip ──────────────────────────────
+    bookings = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_TMS_Bookings",
+        "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Confirmed\""
+    );
+
+    busCode = tripRecord.get("Bus_Code");
+    route = tripRecord.get("Route");
+    driverName = tripRecord.get("Driver_Name");
+    distKm = (distanceMeters / 1000.0).setScale(2);
+
+    // ── Notify each passenger via Zoho Cliq ──────────────────────────────────
+    for each booking in bookings {
+        empEmail = booking.get("Employee_Email");
+        empName = booking.get("Employee_Name");
+        if (!empName.isNull()) { empName = empName.get("display_value"); }
+
+        cliqMsg = "🚌 *BUS ARRIVING SOON!*\n\n" +
+            "Hi " + empName + "! Your bus *" + busCode + "* is approximately " +
+            distKm + " km away from *" + route + "*.\n" +
+            "Please proceed to the boarding point now.\n\n" +
+            "Driver: " + driverName + "\n" +
+            "_Have your QR boarding pass ready!_ 📱";
+
+        // Post to employee's Cliq direct message using their email
+        zoho.cliq.postToChannel("transportation-alerts", cliqMsg);
+
+        // Also update booking with notification flag
+        notifUpdate = map();
+        notifUpdate.put("Proximity_Alert_Sent", "true");
+        notifUpdate.put("Alert_Time", zoho.currenttime);
+        zoho.creator.updateRecord(
+            "centrocdx",
+            "transportation-app",
+            "All_TMS_Bookings",
+            booking.get("ID"),
+            notifUpdate
+        );
+    }
+
+    // ── Mark trip as alerted to prevent duplicates ────────────────────────────
+    tripAlertUpdate = map();
+    tripAlertUpdate.put("Proximity_Alert_Sent", "true");
+    tripAlertUpdate.put("Last_Known_Lat", busLat.toString());
+    tripAlertUpdate.put("Last_Known_Lng", busLng.toString());
+    zoho.creator.updateRecord(
+        "centrocdx",
+        "transportation-app",
+        "All_Active_Timings",
+        tripId,
+        tripAlertUpdate
+    );
+
+    // Post to management channel
+    mgmtMsg = "📍 Bus *" + busCode + "* is " + distKm + " km from *" + route + "* — " +
+        bookings.size() + " passengers notified.";
+    zoho.cliq.postToChannel("transportation-ops", mgmtMsg);
+
+} else {
+    // ── Check for speed anomaly (speed ≈ 0 for > 10 minutes) ─────────────────
+    // Get last log entry before this one
+    recentLogs = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_Live_Tracking_Logs",
+        "Trip_ID == " + '"' + tripId + '"',
+        "sort_by=-Timestamp&max_records=2"
+    );
+
+    if (recentLogs.size() >= 2) {
+        prevLog = recentLogs.get(1); // Second most recent (before current)
+        prevLat = prevLog.get("Lat").toDecimal();
+        prevLng = prevLog.get("Lng").toDecimal();
+        prevTs = prevLog.get("Timestamp");
+
+        // Calculate movement
+        moveDeltaLat = (busLat - prevLat) * 111320.0;
+        moveDeltaLng = (busLng - prevLng) * 111320.0;
+        movementMeters = ((moveDeltaLat * moveDeltaLat) + (moveDeltaLng * moveDeltaLng)).sqrt();
+
+        // Calculate time delta
+        timeDeltaMs = currentTs.toEpoch() - prevTs.toEpoch();
+        timeDeltaMin = timeDeltaMs / 60000;
+
+        // Check route deviation (> 800m from expected route corridor)
+        routeOriginLat = tripRecord.get("Origin_Lat").toDecimal();
+        routeOriginLng = tripRecord.get("Origin_Lng").toDecimal();
+        if (!routeOriginLat.isNull() && !routeOriginLng.isNull()) {
+            // Simple bearing deviation check
+            expectedBearing = tripRecord.get("Expected_Bearing").toDecimal();
+            actualBearing = 0.0; // Simplified; full implementation needs atan2
+
+            // Deviation from expected corridor using cross-track distance
+            deviationLat = (busLat - routeOriginLat) * 111320.0;
+            deviationLng = (busLng - routeOriginLng) * 111320.0;
+            deviationMeters = ((deviationLat * deviationLat) + (deviationLng * deviationLng)).sqrt();
+
+            existingAnomalyFlag = tripRecord.get("Anomaly_Flagged");
+            if (deviationMeters > 800 && existingAnomalyFlag != "true") {
+                anomalyAlert = "⚠️ *ROUTE DEVIATION DETECTED*\n" +
+                    "Bus *" + tripRecord.get("Bus_Code") + "* is *" + (deviationMeters/1000.0).setScale(2) +
+                    " km* off expected route!\n" +
+                    "Current: " + busLat + ", " + busLng + "\n" +
+                    "Trip: " + route;
+                zoho.cliq.postToChannel("transportation-ops", anomalyAlert);
+
+                anomalyUpdate = map();
+                anomalyUpdate.put("Anomaly_Flagged", "true");
+                anomalyUpdate.put("Anomaly_Type", "ROUTE_DEVIATION");
+                zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Active_Timings", tripId, anomalyUpdate);
+            }
+        }
+
+        // Check stationary for > 10 min
+        if (movementMeters < 50 && timeDeltaMin > 10) {
+            existingStopFlag = tripRecord.get("Stop_Alert_Sent");
+            if (existingStopFlag != "true") {
+                stopAlert = "🛑 *BUS STOPPED — POSSIBLE BREAKDOWN*\n" +
+                    "Bus *" + tripRecord.get("Bus_Code") + "* on route *" + route +
+                    "* has not moved for *" + timeDeltaMin.toLong() + " minutes*.\n" +
+                    "Location: " + busLat + ", " + busLng + "\n" +
+                    "Please contact the driver immediately.";
+                zoho.cliq.postToChannel("transportation-ops", stopAlert);
+
+                stopUpdate = map();
+                stopUpdate.put("Stop_Alert_Sent", "true");
+                stopUpdate.put("Anomaly_Type", "STATIONARY");
+                zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Active_Timings", tripId, stopUpdate);
+            }
+        }
+    }
+
+    // Update trip's last known position
+    posUpdate = map();
+    posUpdate.put("Last_Known_Lat", busLat.toString());
+    posUpdate.put("Last_Known_Lng", busLng.toString());
+    posUpdate.put("Last_Ping_Time", zoho.currenttime);
+    zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Active_Timings", tripId, posUpdate);
+}

@@ -1,0 +1,142 @@
+/**
+ * WORKFLOW: Automated Overflow Standby System
+ * Trigger: On Add of "Overflow_Standby" form
+ * Purpose: When standby queue > 10, alert management and suggest ghost bus deployment
+ */
+
+// ── Count current standby for this trip ──────────────────────────────────────
+tripId = input.Trip_ID;
+standbyList = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Overflow_Standby",
+    "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Waiting\""
+);
+
+standbyCount = standbyList.size();
+
+// ── Fetch trip info ───────────────────────────────────────────────────────────
+tripRecords = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Active_Timings",
+    "ID == " + '"' + tripId + '"'
+);
+tripRecord = tripRecords.isEmpty() ? map() : tripRecords.get(0);
+route = tripRecord.get("Route");
+if (route.isNull()) { route = tripRecord.get("Dropoff_Point"); }
+busCode = tripRecord.get("Bus_Code");
+departureTime = tripRecord.get("Departure_Time");
+
+// ── Notify employee they're on standby ───────────────────────────────────────
+empEmail = input.Employee_Email;
+empName = input.Employee_Name;
+if (!empName.isNull() && empName.isMap()) { empName = empName.get("display_value"); }
+
+standbyMsg = "📋 *You've been added to the standby list*\n\n" +
+    "Hi " + empName + "!\n" +
+    "The bus for *" + route + "* (Departs: " + departureTime + ") is currently full.\n" +
+    "You are *#" + standbyCount + "* on the waiting list.\n\n" +
+    "You will be automatically notified if a seat becomes available or if a new bus is deployed.";
+zoho.cliq.postToChannel("transportation-alerts", standbyMsg);
+
+// ── Check threshold for ghost bus alert (> 10 on standby) ───────────────────
+if (standbyCount > 10) {
+
+    // Check if we already sent a ghost bus alert for this trip today
+    existingAlerts = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_Incident_Reports",
+        "Trip_ID == " + '"' + tripId + '"' + " && Incident_Type == \"GHOST_BUS_REQUEST\" && Status == \"Open\""
+    );
+
+    if (!existingAlerts.isEmpty()) {
+        // Already alerted — just update the standby count
+        alertUpdate = map();
+        alertUpdate.put("Description", standbyCount + " passengers on standby for " + route + " (Bus " + busCode + ")");
+        zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Incident_Reports", existingAlerts.get(0).get("ID"), alertUpdate);
+        return;
+    }
+
+    // ── Create high-priority incident record ──────────────────────────────────
+    incidentData = map();
+    incidentData.put("Incident_Type", "GHOST_BUS_REQUEST");
+    incidentData.put("Status", "Open");
+    incidentData.put("Priority", "High");
+    incidentData.put("Trip_ID", tripId);
+    incidentData.put("Description", "⚠️ GHOST BUS REQUIRED: " + standbyCount + " passengers on standby for " + route + " departing " + departureTime + ". Immediate deployment recommended.");
+    incidentData.put("Timestamp", zoho.currenttime);
+    incidentData.put("Driver_Email", tripRecord.get("Driver_Email"));
+    zoho.creator.createRecord("centrocdx", "transportation-app", "Incident_Reports", incidentData);
+
+    // ── Fire webhook to Management Dashboard ─────────────────────────────────
+    ghostBusWebhookUrl = zoho.secrets.fetch("GHOST_BUS_WEBHOOK_URL");
+    if (!ghostBusWebhookUrl.isNull() && !ghostBusWebhookUrl.isEmpty()) {
+        webhookPayload = map();
+        webhookPayload.put("alert_type", "GHOST_BUS_REQUIRED");
+        webhookPayload.put("trip_id", tripId);
+        webhookPayload.put("route", route);
+        webhookPayload.put("bus_code", busCode);
+        webhookPayload.put("standby_count", standbyCount);
+        webhookPayload.put("departure_time", departureTime);
+        webhookPayload.put("timestamp", zoho.currenttime.toString());
+        webhookPayload.put("standby_employees", standbyList.size());
+
+        invokeurl
+        [
+            url: ghostBusWebhookUrl
+            type: POST
+            parameters: webhookPayload.toString()
+            content-type: "application/json"
+        ];
+    }
+
+    // ── Send urgent Cliq alert to management ──────────────────────────────────
+    ghostBusAlert = "🚌🚨 *GHOST BUS ALERT*\n\n" +
+        "*Route:* " + route + "\n" +
+        "*Bus:* " + busCode + " (FULL)\n" +
+        "*Standby Queue:* " + standbyCount + " passengers\n" +
+        "*Departs:* " + departureTime + "\n\n" +
+        "⚡ *Recommendation: Deploy a Ghost Bus immediately*\n" +
+        "Approve in Management Dashboard or reply DEPLOY to auto-assign available bus.";
+    zoho.cliq.postToChannel("transportation-ops", ghostBusAlert);
+
+} else if (standbyCount == 5) {
+    // Early warning at 5 on standby
+    earlyWarning = "⚠️ *Standby Warning*: " + standbyCount + " passengers waiting for " +
+        route + " (Bus: " + busCode + "). Monitor for potential overflow.";
+    zoho.cliq.postToChannel("transportation-ops", earlyWarning);
+}
+
+// ── Check if a cancellation freed a seat and auto-assign standby ─────────────
+// This runs as a separate check — if a booking was just cancelled, first standby gets the seat
+cancelledBookings = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_TMS_Bookings",
+    "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Just_Cancelled\""
+);
+
+if (!cancelledBookings.isEmpty() && standbyCount > 0) {
+    firstStandby = standbyList.get(0);
+    firstEmpEmail = firstStandby.get("Employee_Email");
+
+    // Upgrade first standby to confirmed
+    standbyUpgrade = map();
+    standbyUpgrade.put("Status", "Confirmed");
+    standbyUpgrade.put("Upgraded_At", zoho.currenttime);
+    zoho.creator.updateRecord(
+        "centrocdx",
+        "transportation-app",
+        "All_Overflow_Standby",
+        firstStandby.get("ID"),
+        standbyUpgrade
+    );
+
+    // Notify the lucky employee
+    upgradeMsg = "🎉 *Great news!* A seat just opened up on " + route + "!\n" +
+        "You've been moved from standby to *CONFIRMED*. " +
+        "Your new booking will appear in your Employee App shortly.";
+    zoho.cliq.postToChannel("transportation-alerts", upgradeMsg);
+}
