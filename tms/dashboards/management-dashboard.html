@@ -330,8 +330,9 @@ const APP_CONFIG = {
   },
   forms: { trips: 'Active_Timings', buses: 'Buses' },
   refreshMs: 15000,
-  aiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
-  aiKey: 'YOUR_GEMINI_API_KEY',
+  // Gemini is called server-side via a Zoho Flow proxy so the API key never ships to the client.
+  // The proxy accepts { prompt } and returns either { text } or the raw Gemini response.
+  aiProxyUrl: 'REPLACE_WITH_AI_PROXY_WEBHOOK_URL',
 };
 
 // ─────────────────────────────────────────────
@@ -425,6 +426,7 @@ function updateBusMarker(tripId, lat, lng) {
 // DATA LOADING
 // ─────────────────────────────────────────────
 async function refreshAll() {
+  if (document.hidden) return; // skip background polling to spare API quota + battery
   await Promise.all([loadTrips(), loadBookings(), loadAlerts(), loadStandby()]);
   updateHeaderStats();
 }
@@ -809,12 +811,12 @@ Analyze this data:
 Return exactly 3 fleet recommendations as JSON array: [{"Title":"...","Body":"...","Confidence":85,"Type":"fleet|optimization|overflow"}]
 Keep each body under 40 words. Focus on actionable insights.`;
 
-    const resp = await fetch(`${APP_CONFIG.aiEndpoint}?key=${APP_CONFIG.aiKey}`, {
+    const resp = await fetch(APP_CONFIG.aiProxyUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      body: JSON.stringify({ prompt }),
     });
     const data = await resp.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const text = data.text || data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const json = text.match(/\[.*\]/s)?.[0] || '[]';
     const insights = JSON.parse(json);
     renderAIInsights(insights.map((ins, i) => ({ ...ins, ID: 'ai-' + i })));
@@ -908,6 +910,12 @@ function switchPanelTab(name) {
 function startAutoRefresh() {
   if (st.refreshInterval) clearInterval(st.refreshInterval);
   st.refreshInterval = setInterval(refreshAll, APP_CONFIG.refreshMs);
+  if (!st.visibilityHooked) {
+    st.visibilityHooked = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && st.autoRefresh) refreshAll(); // refresh instantly on return
+    });
+  }
 }
 
 function toggleAutoRefresh() {

@@ -109,34 +109,5 @@ if (standbyCount > 10) {
     zoho.cliq.postToChannel("transportation-ops", earlyWarning);
 }
 
-// ── Check if a cancellation freed a seat and auto-assign standby ─────────────
-// This runs as a separate check — if a booking was just cancelled, first standby gets the seat
-cancelledBookings = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
-    "All_TMS_Bookings",
-    "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Just_Cancelled\""
-);
-
-if (!cancelledBookings.isEmpty() && standbyCount > 0) {
-    firstStandby = standbyList.get(0);
-    firstEmpEmail = firstStandby.get("Employee_Email");
-
-    // Upgrade first standby to confirmed
-    standbyUpgrade = map();
-    standbyUpgrade.put("Status", "Confirmed");
-    standbyUpgrade.put("Upgraded_At", zoho.currenttime);
-    zoho.creator.updateRecord(
-        "centrocdx",
-        "transportation-app",
-        "All_Overflow_Standby",
-        firstStandby.get("ID"),
-        standbyUpgrade
-    );
-
-    // Notify the lucky employee
-    upgradeMsg = "🎉 *Great news!* A seat just opened up on " + route + "!\n" +
-        "You've been moved from standby to *CONFIRMED*. " +
-        "Your new booking will appear in your Employee App shortly.";
-    zoho.cliq.postToChannel("transportation-alerts", upgradeMsg);
-}
+// Seat release + standby promotion on cancellation is handled by
+// 07_on_booking_cancel.dg (On Edit of the Bookings form), not here.

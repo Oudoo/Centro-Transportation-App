@@ -373,8 +373,9 @@ const APP_CONFIG = {
     leaderboard: 'Eco_Leaderboard',
     trackingLogs: 'All_Live_Tracking_Logs',
   },
-  aiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
-  aiKey: 'YOUR_GEMINI_API_KEY', // Replace with your key or use Zoho Flow proxy
+  // Gemini is called server-side via a Zoho Flow proxy so the API key never ships to the client.
+  // The proxy accepts { prompt } and returns either { text } or the raw Gemini response.
+  aiProxyUrl: 'REPLACE_WITH_AI_PROXY_WEBHOOK_URL',
   co2PerKm: 0.21, // kg CO2 per km average car emission offset
   avgRouteKm: 25,  // average route distance in km (Cairo metro area)
 };
@@ -758,9 +759,16 @@ function startTrackingPolling() {
   if (state.trackingInterval) return;
   state.trackingInterval = setInterval(pollBusLocation, 10000);
   pollBusLocation();
+  if (!state.visibilityHooked) {
+    state.visibilityHooked = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) pollBusLocation(); // refresh instantly on return
+    });
+  }
 }
 
 async function pollBusLocation() {
+  if (document.hidden) return; // skip while app is backgrounded
   if (!state.activeBooking) return;
   const tripId = state.activeBooking.Trip_ID || state.activeBooking.ID;
   try {
@@ -915,15 +923,14 @@ Keep response under 100 words. Format: {"message": "...", "trip_id": "...", "con
 }
 
 async function callAI(prompt) {
-  // Use Zoho Flow webhook as proxy to avoid exposing API key in frontend
-  // Fallback to direct call if configured
-  const resp = await fetch(`${APP_CONFIG.aiEndpoint}?key=${APP_CONFIG.aiKey}`, {
+  // Proxied through Zoho Flow so the Gemini key stays server-side.
+  const resp = await fetch(APP_CONFIG.aiProxyUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    body: JSON.stringify({ prompt }),
   });
   const data = await resp.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  const text = data.text || data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
   const json = text.match(/\{.*\}/s)?.[0] || '{}';
   return JSON.parse(json);
 }

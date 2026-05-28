@@ -1,0 +1,108 @@
+/**
+ * WORKFLOW: On Booking Cancel — Seat Release + Standby Promotion
+ * Trigger: On Edit of the "Bookings" form (TMS_Bookings)
+ * Place: Form Workflow → On Edit → Action Script
+ * Purpose: When a confirmed booking is cancelled, return its seat to the trip and,
+ *          if anyone is waiting, promote the first standby into the freed seat.
+ *
+ * Replaces the old "Just_Cancelled" status hack that lived in 06_overflow_standby.dg.
+ * Idempotency is enforced by the Seat_Released flag so re-edits never double-release.
+ */
+
+// ── Guard: only act on a fresh cancellation ──────────────────────────────────
+if (input.Status != "Cancelled") { return; }
+if (input.Seat_Released == true) { return; } // already processed
+
+tripId = input.Trip_ID;
+if (tripId.isNull() || tripId.toString().isEmpty()) { return; }
+
+// ── Fetch the trip ────────────────────────────────────────────────────────────
+tripRecord = zoho.creator.getRecordById(
+    "centrocdx",
+    "transportation-app",
+    "Active_Timings",
+    tripId.toLong()
+);
+if (tripRecord.isNull() || tripRecord.isEmpty()) { return; }
+
+currentSeats = tripRecord.get("Available_Seats").toLong();
+if (currentSeats.isNull()) { currentSeats = 0; }
+totalSeats = tripRecord.get("Total_Seats").toLong();
+if (totalSeats.isNull() || totalSeats == 0) { totalSeats = tripRecord.get("Number_of_Seats").toLong(); }
+if (totalSeats.isNull() || totalSeats == 0) { totalSeats = 35; }
+
+route = tripRecord.get("Route");
+if (route.isNull()) { route = tripRecord.get("Dropoff_Point"); }
+busCode = tripRecord.get("Bus_Code");
+
+// ── Find the first waiting standby for this trip ─────────────────────────────
+standbyList = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Overflow_Standby",
+    "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Waiting\""
+);
+
+promotedEmail = "";
+if (!standbyList.isEmpty()) {
+    // ── Promote: the freed seat is immediately reused, so seat count is unchanged ──
+    firstStandby = standbyList.get(0);
+    promotedEmail = firstStandby.get("Employee_Email");
+
+    standbyUpgrade = map();
+    standbyUpgrade.put("Status", "Confirmed");
+    standbyUpgrade.put("Upgraded_At", zoho.currenttime);
+    zoho.creator.updateRecord(
+        "centrocdx",
+        "transportation-app",
+        "All_Overflow_Standby",
+        firstStandby.get("ID"),
+        standbyUpgrade
+    );
+
+    upgradeMsg = "🎉 *A seat just opened up on " + route + "!*\n" +
+        "You've been moved from standby to *CONFIRMED*.\n" +
+        "Open the Employee App to grab your QR boarding pass.";
+    zoho.cliq.postToChannel("transportation-alerts", upgradeMsg);
+    // NOTE: minting a full Bookings record (with QR) for the promoted standby is a
+    // future enhancement; doing it here would re-fire 01_on_booking_submit and
+    // double-decrement the seat. Tracked in SETUP_GUIDE.
+} else {
+    // ── No one waiting: return the seat to the pool ──────────────────────────────
+    newSeats = currentSeats + 1;
+    if (newSeats > totalSeats) { newSeats = totalSeats; }
+
+    tripUpdate = map();
+    tripUpdate.put("Available_Seats", newSeats);
+    if (tripRecord.get("Status") == "Full") { tripUpdate.put("Status", "Active"); }
+    zoho.creator.updateRecord(
+        "centrocdx",
+        "transportation-app",
+        "All_Active_Timings",
+        tripId.toLong(),
+        tripUpdate
+    );
+}
+
+// ── Mark this booking as processed (idempotency) ─────────────────────────────
+releaseUpdate = map();
+releaseUpdate.put("Seat_Released", true);
+releaseUpdate.put("Cancelled_At", zoho.currenttime);
+zoho.creator.updateRecord(
+    "centrocdx",
+    "transportation-app",
+    "All_TMS_Bookings",
+    input.ID,
+    releaseUpdate
+);
+
+// ── Notify ops ────────────────────────────────────────────────────────────────
+opsMsg = "↩️ Booking cancelled on *" + route + "* (Bus " + busCode + ").";
+if (!promotedEmail.isEmpty()) {
+    opsMsg = opsMsg + " Seat reassigned to standby passenger " + promotedEmail + ".";
+} else {
+    opsMsg = opsMsg + " Seat returned to pool.";
+}
+zoho.cliq.postToChannel("transportation-ops", opsMsg);
+
+info "Booking " + input.ID + " cancelled. Standby promoted: " + (promotedEmail.isEmpty() ? "none" : promotedEmail);
