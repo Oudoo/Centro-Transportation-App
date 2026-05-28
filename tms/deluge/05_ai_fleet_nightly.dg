@@ -14,8 +14,7 @@ historicalBookings = zoho.creator.getRecords(
     "centrocdx",
     "transportation-app",
     "All_TMS_Bookings",
-    "Booking_Time >= " + '"' + thirtyDaysAgo + '"',
-    "max_records=200"
+    "Booking_Time >= " + '"' + thirtyDaysAgo + '"'
 );
 
 // Historical heatmap
@@ -23,8 +22,7 @@ heatmapData = zoho.creator.getRecords(
     "centrocdx",
     "transportation-app",
     "All_Heatmap_Data",
-    "Timestamp >= " + '"' + thirtyDaysAgo + '"',
-    "max_records=200"
+    "Timestamp >= " + '"' + thirtyDaysAgo + '"'
 );
 
 // Available buses
@@ -77,10 +75,10 @@ tomorrowDowName = (tomorrowDow == 1 ? "Monday" : tomorrowDow == 2 ? "Tuesday" : 
 
 promptPayload = map();
 routeStatsForAI = list();
-for each routeEntry in routeStats.entrySet() {
-    rs = routeEntry.getValue();
+for each routeKey in routeStats.keys() {
+    rs = routeStats.get(routeKey);
     routeItem = map();
-    routeItem.put("route", routeEntry.getKey());
+    routeItem.put("route", routeKey);
     routeItem.put("avg_daily", (rs.get("total_bookings").toDecimal() / 30.0).setScale(1));
     dowKey = (tomorrowDow == 1 ? "mon" : tomorrowDow == 2 ? "tue" : tomorrowDow == 3 ? "wed" : tomorrowDow == 4 ? "thu" : tomorrowDow == 5 ? "fri" : tomorrowDow == 6 ? "sat" : "sun");
     routeItem.put("predicted_tomorrow", rs.get(dowKey));
@@ -98,7 +96,7 @@ aiPrompt = "You are a fleet optimization AI for Centro Transportation Company in
 
 // ── Call Gemini API ───────────────────────────────────────────────────────────
 geminiKey = zoho.secrets.fetch("GEMINI_API_KEY"); // store the key in Zoho Secrets Manager as GEMINI_API_KEY
-geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + geminiKey;
+geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + geminiKey;
 
 aiRequestBody = map();
 contents = list();
@@ -136,12 +134,12 @@ if (!assignmentsJson.isEmpty()) {
 
 // Fallback to rule-based if AI fails
 if (assignments.isEmpty()) {
-    for each routeEntry in routeStats.entrySet() {
-        rs = routeEntry.getValue();
+    for each routeKey in routeStats.keys() {
+        rs = routeStats.get(routeKey);
         dowKey = (tomorrowDow == 1 ? "mon" : tomorrowDow == 2 ? "tue" : "wed");
         predicted = rs.get(dowKey).toLong();
         assignment = map();
-        assignment.put("route", routeEntry.getKey());
+        assignment.put("route", routeKey);
         assignment.put("expected_demand", predicted);
         assignment.put("recommended_bus", predicted > 30 ? "Large Bus (50 seats)" : "Standard Bus (35 seats)");
         assignment.put("confidence", 70);
@@ -177,7 +175,10 @@ morningBriefing = "🤖 *AI Fleet Briefing for " + tomorrow + " (" + tomorrowDow
     "🚌 Routes analyzed: " + routeStats.size() + "\n\n" +
     "*Top predictions:*\n";
 
-highPriority = assignments.filter(a -> a.get("expected_demand").toLong() > 25);
+highPriority = list();
+for each a in assignments {
+    if (a.get("expected_demand").toLong() > 25) { highPriority.add(a); }
+}
 for each hp in highPriority {
     morningBriefing = morningBriefing + "• " + hp.get("route") + ": " + hp.get("expected_demand") + " pax → " + hp.get("recommended_bus") + "\n";
 }

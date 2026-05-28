@@ -29,7 +29,7 @@
   },
   "ai": {
     "provider": "gemini",
-    "model": "gemini-pro",
+    "model": "gemini-2.0-flash",
     "proxyViaZohoFlow": true,
     "co2PerKm": 0.21,
     "avgRouteLengthKm": 25

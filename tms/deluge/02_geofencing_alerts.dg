@@ -27,14 +27,14 @@ destLng = tripRecord.get("Dest_Lng").toDecimal();
 if (destLat.isNull() || destLat == 0.0) { destLat = 30.0621; }
 if (destLng.isNull() || destLng == 0.0) { destLng = 31.4983; }
 
-// ── Equirectangular distance approximation (meters) ──────────────────────────
-// Avoids trig: longitude degrees shrink by cos(latitude). Cairo sits at ~30°N
-// where cos(30°) ≈ 0.866, so we use that constant instead of a cos() call.
-// Accurate to well within 1% for the short, intra-city distances we check.
+// ── Equirectangular distance approximation (meters), sqrt-free ───────────────
+// Longitude degrees shrink by cos(latitude); Cairo ~30°N → cos(30°) ≈ 0.866.
+// Deluge has no .cos()/.sqrt(), so we use a constant + the alpha-max-beta-min
+// magnitude approximation (|v| ≈ 0.9604*max + 0.3978*min, ≤ ~4% error).
 CAIRO_LNG_SCALE = 0.866;
-deltaLat = (destLat - busLat) * 111320.0;
-deltaLng = (destLng - busLng) * 111320.0 * CAIRO_LNG_SCALE;
-distanceMeters = ((deltaLat * deltaLat) + (deltaLng * deltaLng)).sqrt();
+deltaLat = ((destLat - busLat) * 111320.0).abs();
+deltaLng = ((destLng - busLng) * 111320.0 * CAIRO_LNG_SCALE).abs();
+distanceMeters = (deltaLat >= deltaLng) ? (deltaLat * 0.9604 + deltaLng * 0.3978) : (deltaLng * 0.9604 + deltaLat * 0.3978);
 
 // ── Check 1 KM proximity threshold ───────────────────────────────────────────
 alreadyNotified = tripRecord.get("Proximity_Alert_Sent");
@@ -103,25 +103,33 @@ if (distanceMeters <= 1000) {
 
 } else {
     // ── Check for speed anomaly (speed ≈ 0 for > 10 minutes) ─────────────────
-    // Get last log entry before this one
-    recentLogs = zoho.creator.getRecords(
+    // Find the most recent prior log for this trip (excludes the current record).
+    // Replaces the invalid getRecords sort/max 5th-arg; selects by max Timestamp.
+    priorLogs = zoho.creator.getRecords(
         "centrocdx",
         "transportation-app",
         "All_Live_Tracking_Logs",
-        "Trip_ID == " + '"' + tripId + '"',
-        "sort_by=-Timestamp&max_records=2"
+        "Trip_ID == " + '"' + tripId + '"'
     );
+    prevLog = null;
+    prevTsEpoch = 0;
+    for each lg in priorLogs {
+        lgTs = lg.get("Timestamp");
+        if (lg.get("ID") != input.ID && !lgTs.isNull() && lgTs.toEpoch() > prevTsEpoch) {
+            prevTsEpoch = lgTs.toEpoch();
+            prevLog = lg;
+        }
+    }
 
-    if (recentLogs.size() >= 2) {
-        prevLog = recentLogs.get(1); // Second most recent (before current)
+    if (!prevLog.isNull()) {
         prevLat = prevLog.get("Lat").toDecimal();
         prevLng = prevLog.get("Lng").toDecimal();
         prevTs = prevLog.get("Timestamp");
 
-        // Calculate movement
-        moveDeltaLat = (busLat - prevLat) * 111320.0;
-        moveDeltaLng = (busLng - prevLng) * 111320.0;
-        movementMeters = ((moveDeltaLat * moveDeltaLat) + (moveDeltaLng * moveDeltaLng)).sqrt();
+        // Calculate movement (sqrt-free magnitude)
+        moveDeltaLat = ((busLat - prevLat) * 111320.0).abs();
+        moveDeltaLng = ((busLng - prevLng) * 111320.0).abs();
+        movementMeters = (moveDeltaLat >= moveDeltaLng) ? (moveDeltaLat * 0.9604 + moveDeltaLng * 0.3978) : (moveDeltaLng * 0.9604 + moveDeltaLat * 0.3978);
 
         // Calculate time delta
         timeDeltaMs = currentTs.toEpoch() - prevTs.toEpoch();
@@ -136,9 +144,9 @@ if (distanceMeters <= 1000) {
             actualBearing = 0.0; // Simplified; full implementation needs atan2
 
             // Deviation from expected corridor using cross-track distance
-            deviationLat = (busLat - routeOriginLat) * 111320.0;
-            deviationLng = (busLng - routeOriginLng) * 111320.0;
-            deviationMeters = ((deviationLat * deviationLat) + (deviationLng * deviationLng)).sqrt();
+            deviationLat = ((busLat - routeOriginLat) * 111320.0).abs();
+            deviationLng = ((busLng - routeOriginLng) * 111320.0).abs();
+            deviationMeters = (deviationLat >= deviationLng) ? (deviationLat * 0.9604 + deviationLng * 0.3978) : (deviationLng * 0.9604 + deviationLat * 0.3978);
 
             existingAnomalyFlag = tripRecord.get("Anomaly_Flagged");
             if (deviationMeters > 800 && existingAnomalyFlag != "true") {

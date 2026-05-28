@@ -70,9 +70,8 @@ for each trip in activeTrips {
 
 // ── Generate recommendations ──────────────────────────────────────────────────
 recommendations = list();
-for each routeEntry in routeDemand.entrySet() {
-    route = routeEntry.getKey();
-    demand = routeEntry.getValue().toLong();
+for each route in routeDemand.keys() {
+    demand = routeDemand.get(route).toLong();
 
     capacityData = tripCapacity.get(route);
     if (capacityData.isNull()) {
@@ -153,9 +152,8 @@ for each rec in recommendations {
 }
 
 // ── Update heatmap scores ─────────────────────────────────────────────────────
-for each routeEntry in routeDemand.entrySet() {
-    route = routeEntry.getKey();
-    demand = routeEntry.getValue().toLong();
+for each route in routeDemand.keys() {
+    demand = routeDemand.get(route).toLong();
 
     existingHeat = zoho.creator.getRecords(
         "centrocdx",
@@ -178,7 +176,10 @@ for each routeEntry in routeDemand.entrySet() {
 }
 
 // ── Notify management if critical recommendations found ───────────────────────
-criticalRecs = recommendations.filter(r -> r.get("Priority") == "Critical");
+criticalRecs = list();
+for each r in recommendations {
+    if (r.get("Priority") == "Critical") { criticalRecs.add(r); }
+}
 if (criticalRecs.size() > 0) {
     alertMsg = "🚨 *Fleet Alert — " + criticalRecs.size() + " critical recommendations*\n\n";
     for each rec in criticalRecs {
