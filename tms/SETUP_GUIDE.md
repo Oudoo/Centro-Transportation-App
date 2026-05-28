@@ -22,7 +22,10 @@
 3. **`Active_Timings`** — its `Bus` lookup → `Buses` — *trips*
 4. **`Bookings`** — `Employee_Name` lookup → `Employee_Registration`; `Trip_ID` holds an `Active_Timings` record id — *transactional*
 5. **`Overflow_Standby`, `Live_Tracking_Logs`, `Heatmap_Data`, `AI_Fleet_Recommendations`, `Incident_Reports`** — *supporting, no cross-deps*
-6. **Reports** auto-generate per form; build the `Eco_Leaderboard` view last.
+6. **`Commute_Templates`** (F1) and **`Driver_Performance`** (F2) — *feature forms, no cross-deps*
+7. **Reports** auto-generate per form; build the `Eco_Leaderboard` view last.
+
+> New since the feature build: `Commute_Templates`, `Driver_Performance`, plus added fields on `Active_Timings` (`Actual_Departure_Time`, `Optimized_Sequence`, `Optimized_At`) and `Bookings` (`Seat_Number`, `Seat_Released`, `Cancelled_At`, `Source`). All are flagged **F1/F2/F3/I2/Cancel** in the tables below.
 
 > After you create each form, I verify it via MCP (`getFields`) and seed realistic test data before you move on — per the verification protocol.
 
@@ -73,7 +76,10 @@
 | Boarded Count          | Boarded_Count      | Number        | Auto-incremented             |
 | Actual Start           | Actual_Start       | DateTime      |                             |
 | Actual End             | Actual_End         | DateTime      |                             |
+| Actual Departure Time  | Actual_Departure_Time | DateTime   | **F2** — set when trip starts; vs `Departure_Time` for punctuality |
 | Distance Km (Actual)   | Distance_Km        | Decimal       |                             |
+| Optimized Sequence     | Optimized_Sequence | Multi Line    | **I2** — AI pickup order, shown to driver |
+| Optimized At           | Optimized_At       | DateTime      | **I2** — when sequence was generated |
 | Notes                  | Notes              | Multi Line    |                             |
 
 **Report**: `All_Active_Timings`
@@ -100,8 +106,14 @@
 | Sync Time              | Sync_Time              | DateTime  |                                |
 | Dropoff Point          | Dropoff_Point          | Single Line|                               |
 | Route                  | Route                  | Single Line|                               |
+| Seat Number            | Seat_Number            | Number    | **F3** — seat chosen in the picker |
+| Seat Released          | Seat_Released          | Checkbox  | **Cancel** — idempotency flag, set by 07 |
+| Cancelled At           | Cancelled_At           | DateTime  | **Cancel** — set by 07          |
+| Source                 | Source                 | Single Line| **F1** — `Recurring_Auto` for auto-booked trips |
 
 **Report**: `All_TMS_Bookings`
+
+> **Status dropdown must include `Cancelled`** — the On-Edit cancel workflow (07) keys on it.
 
 ---
 
@@ -154,7 +166,7 @@
 | Recommendation Body    | Recommendation_Body    | Multi Line |
 | Priority               | Priority               | Dropdown   | Low/Medium/High/Critical |
 | Confidence Score       | Confidence_Score       | Number     |
-| Type                   | Type                   | Single Line| fleet/optimization/overflow |
+| Type                   | Type                   | Single Line| fleet/optimization/overflow/missing_route/route_optimization |
 | Route                  | Route                  | Single Line|
 | Demand Count           | Demand_Count           | Number     |
 | Trip ID                | Trip_ID                | Single Line|
@@ -193,6 +205,43 @@ Add these fields to Employee_Registration first:
 - `Eco_Points` (Number)
 - `Total_Trips` (Number)
 - `Eco_Level` (Single Line)
+
+---
+
+### 10. `Commute_Templates` Form (F1 — Smart Recurring Commute)
+| Field Display Name | Link Name        | Type        | Notes                                   |
+|--------------------|------------------|-------------|-----------------------------------------|
+| Employee ID        | Employee_ID      | Single Line |                                         |
+| Employee Email     | Employee_Email   | Email       | Mandatory                               |
+| Route              | Route            | Single Line | Must match an `Active_Timings.Route`    |
+| Days Active        | Days_Active      | Single Line | Comma list, lowercase: `mon,tue,wed,thu,fri` |
+| Active             | Active           | Dropdown    | `Yes` / `No` (script filters `Active == "Yes"`) |
+| Departure Window   | Departure_Window | Single Line | Optional, informational                 |
+| Last Auto Booked   | Last_Auto_Booked | Date        | Stamped by script 08                    |
+
+**Report**: `All_Commute_Templates`
+**Used by**: script 08 (read/update), employee app "Schedule" tab (add/list/delete).
+
+---
+
+### 11. `Driver_Performance` Form (F2 — Punctuality Scorecard)
+| Field Display Name | Link Name       | Type        | Notes                       |
+|--------------------|-----------------|-------------|-----------------------------|
+| Driver Email       | Driver_Email    | Email       | Mandatory                   |
+| Driver Name        | Driver_Name     | Single Line |                             |
+| Week Start         | Week_Start      | Date        |                             |
+| Week End           | Week_End        | Date        |                             |
+| Trips Completed    | Trips_Completed | Number      |                             |
+| On Time Count      | On_Time_Count   | Number      |                             |
+| Late Count         | Late_Count      | Number      |                             |
+| On Time Pct        | On_Time_Pct     | Decimal     |                             |
+| Anomaly Count      | Anomaly_Count   | Number      |                             |
+| Avg Delay Min      | Avg_Delay_Min   | Decimal     |                             |
+| Score              | Score           | Decimal     | 0–100 composite             |
+| Rank               | Rank            | Number      | 1 = best that week          |
+
+**Report**: `All_Driver_Performances`
+**Used by**: script 09 (write), management "Driver Scorecard" view (read).
 
 ---
 
@@ -242,6 +291,32 @@ Add to existing `Employee_Registration` form:
 - **Trigger**: On Add
 - **Script**: `tms/deluge/06_overflow_standby.dg`
 
+### Workflow 4: On Booking Cancel (seat release + standby promotion)
+- **Form**: `Bookings`
+- **Trigger**: **On Edit** (fires when `Status` becomes `Cancelled`)
+- **Script**: `tms/deluge/07_on_booking_cancel.dg`
+- **What it does**: Returns the seat to the trip (or promotes the first standby into it), idempotent via `Seat_Released`. Replaces the old `Just_Cancelled` hack.
+
+### Scheduled Function 3: F1 — Recurring Commute Auto-Booker
+- **Type**: Schedule
+- **Time**: 03:00 AM (Cairo) — *after* the nightly fleet allocation
+- **Script**: `tms/deluge/08_recurring_commute_nightly.dg`
+- **Depends on**: `Commute_Templates` form; creates `Bookings` (re-fires Workflow 1).
+
+### Scheduled Function 4: F2 — Driver Punctuality Scorecard
+- **Type**: Schedule
+- **Time**: Monday 06:00 AM (Cairo), weekly
+- **Script**: `tms/deluge/09_driver_scorecard_weekly.dg`
+- **Depends on**: `Driver_Performance` form; reads `Active_Timings` (needs `Actual_Departure_Time`).
+
+### Scheduled Function 5: I2 — AI Route (Pickup-Sequence) Optimization
+- **Type**: Schedule
+- **Time**: 02:30 AM (Cairo) — between fleet allocation (02:00) and recurring booking (03:00)
+- **Script**: `tms/deluge/10_ai_route_optimization_nightly.dg`
+- **Depends on**: `GEMINI_API_KEY` in Secrets; writes `Active_Timings.Optimized_Sequence` + an `AI_Fleet_Recommendations` row.
+
+> **Secrets to add** (Settings → Secrets): `GEMINI_API_KEY`, `GHOST_BUS_WEBHOOK_URL`.
+
 ---
 
 ## Phase 4: Dashboard Deployment (Creator Pages)
@@ -258,15 +333,17 @@ Add to existing `Employee_Registration` form:
    - Driver App → Drivers group only
    - Management Dashboard → Management role only
 
-### Important: Replace API Keys
-In each HTML dashboard, replace:
+### Important: Wire the webhooks (no secrets in client HTML)
+The dashboards **no longer embed the Gemini key**. AI runs through a server-side proxy.
+In each HTML dashboard, replace the placeholder URLs:
 ```
-YOUR_GEMINI_API_KEY → Your actual Gemini API key
-YOUR_ZOHO_CLIQ_WEBHOOK_URL → Your Cliq webhook URL
-YOUR_GHOST_BUS_WEBHOOK_URL → Your Zoho Flow webhook URL
+employee-app.html        → APP_CONFIG.aiProxyUrl   = REPLACE_WITH_AI_PROXY_WEBHOOK_URL
+management-dashboard.html→ APP_CONFIG.aiProxyUrl   = REPLACE_WITH_AI_PROXY_WEBHOOK_URL
+driver-app.html          → APP_CONFIG.cliqWebhook  = YOUR_ZOHO_CLIQ_WEBHOOK_URL
 ```
-
-**Recommended**: Use a Zoho Flow proxy webhook instead of exposing Gemini key in frontend HTML.
+- **AI Proxy** is a **Zoho Flow** webhook trigger that accepts `{ "prompt": "..." }`, calls Gemini server-side with the key from Secrets, and returns `{ "text": "..." }` (the dashboards also accept the raw Gemini shape as a fallback). This keeps `GEMINI_API_KEY` off the client entirely.
+- Server-side Deluge (scripts 05, 10) reads `GEMINI_API_KEY` directly from **Zoho Secrets** — never hardcode it.
+- `GHOST_BUS_WEBHOOK_URL` is read from Secrets by script 06 (not a client value).
 
 ---
 
@@ -411,3 +488,13 @@ Beyond the original spec, the following enhancements were built in:
 | 18 | Radar demand vs capacity chart | Management Dashboard |
 | 19 | Global AI analysis trigger button | Management Dashboard |
 | 20 | Zoho People integration guide | This setup guide |
+
+### Headline features added in the latest build
+
+| Feature | What it does | Backend | Frontend |
+|---------|--------------|---------|----------|
+| **F1 — Smart Recurring Commute** | Employees save a weekly pattern; seats auto-book nightly | `08_recurring_commute_nightly.dg` + `Commute_Templates` | Employee "Schedule" tab |
+| **F2 — Driver Punctuality Scorecard** | Weekly ranked on-time/anomaly scoring per driver | `09_driver_scorecard_weekly.dg` + `Driver_Performance` | Management "Driver Scorecard" view |
+| **F3 — Seat Selection Map** | Visual seat picker; taken seats greyed; seat shown on manifest | `Seat_Number` on Bookings | Employee booking modal + Driver manifest |
+| **I2 — AI Route Optimization** | Gemini orders pickup stops to cut travel time | `10_ai_route_optimization_nightly.dg` | Driver pickup-order card + Management AI Insights |
+| **Cancel workflow** | Idempotent seat release + standby promotion on cancel | `07_on_booking_cancel.dg` | (Status → Cancelled) |
