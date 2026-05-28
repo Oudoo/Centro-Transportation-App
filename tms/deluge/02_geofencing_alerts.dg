@@ -27,23 +27,13 @@ destLng = tripRecord.get("Dest_Lng").toDecimal();
 if (destLat.isNull() || destLat == 0.0) { destLat = 30.0621; }
 if (destLng.isNull() || destLng == 0.0) { destLng = 31.4983; }
 
-// ── Haversine distance calculation ───────────────────────────────────────────
-// Returns approximate distance in meters between two GPS coordinates
-r = 6371000; // Earth radius in meters
-dLat = (destLat - busLat) * 3.14159265 / 180.0;
-dLng = (destLng - busLng) * 3.14159265 / 180.0;
-
-lat1Rad = busLat * 3.14159265 / 180.0;
-lat2Rad = destLat * 3.14159265 / 180.0;
-
-sinDLat = dLat / 2;
-sinDLng = dLng / 2;
-
-// Approximation using small-angle: a ≈ sin²(dLat/2) + cos(lat1)*cos(lat2)*sin²(dLng/2)
-// Deluge doesn't have sin/cos natively, use REST call for precision or use flat-earth approx
-// Flat-earth approximation (accurate within ~0.5% for short distances in Cairo area)
+// ── Equirectangular distance approximation (meters) ──────────────────────────
+// Avoids trig: longitude degrees shrink by cos(latitude). Cairo sits at ~30°N
+// where cos(30°) ≈ 0.866, so we use that constant instead of a cos() call.
+// Accurate to well within 1% for the short, intra-city distances we check.
+CAIRO_LNG_SCALE = 0.866;
 deltaLat = (destLat - busLat) * 111320.0;
-deltaLng = (destLng - busLng) * 111320.0 * (busLat * 3.14159265 / 180.0).cos();
+deltaLng = (destLng - busLng) * 111320.0 * CAIRO_LNG_SCALE;
 distanceMeters = ((deltaLat * deltaLat) + (deltaLng * deltaLng)).sqrt();
 
 // ── Check 1 KM proximity threshold ───────────────────────────────────────────

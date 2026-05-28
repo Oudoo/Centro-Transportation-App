@@ -1,6 +1,7 @@
 /**
  * WORKFLOW: On Booking Submit — Seat Concurrency Validation + QR Hash Generation
- * Trigger: On Submit of "Bookings" (or "New_Booking_Request") form
+ * Trigger: On Add of the new "Bookings" form
+ *          (NOT New_Booking_Request — that form has no Trip_ID/Status/QR_Hash and would error)
  * Place: Form Workflow → On Add → Action Script
  */
 
@@ -21,7 +22,10 @@ if (tripRecord.isNull() || tripRecord.isEmpty()) {
 
 currentSeats = tripRecord.get("Available_Seats").toLong();
 
-// ── Seat availability check (optimistic concurrency) ────────────────────────
+// ── Seat availability check ─────────────────────────────────────────────────
+// NOTE: read-then-write is best-effort, not fully atomic — two simultaneous
+// submits can both see the last seat and overbook by one. For strict capacity,
+// enforce via a unique constraint or a criteria-conditional update.
 if (currentSeats <= 0) {
     // Redirect to standby workflow
     zoho.creator.setFailureMessage("This trip is fully booked. You've been added to the standby list.");
@@ -35,29 +39,8 @@ if (currentSeats <= 0) {
     standbyData.put("Request_Time", zoho.currenttime);
     zoho.creator.createRecord("centrocdx", "transportation-app", "Overflow_Standby", standbyData);
 
-    // Check if standby count > 10 → trigger ghost bus alert
-    standbyList = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
-        "All_Overflow_Standby",
-        "Trip_ID == " + '"' + input.Trip_ID + '"' + " && Status == \"Waiting\""
-    );
-    if (standbyList.size() >= 10) {
-        ghostBusWebhookUrl = "YOUR_GHOST_BUS_WEBHOOK_URL"; // Zoho Flow webhook
-        webhookData = map();
-        webhookData.put("trip_id", input.Trip_ID);
-        webhookData.put("standby_count", standbyList.size());
-        webhookData.put("route", tripRecord.get("Route"));
-        webhookData.put("bus_code", tripRecord.get("Bus_Code"));
-        webhookData.put("alert_type", "GHOST_BUS_REQUIRED");
-        webhookData.put("timestamp", zoho.currenttime.toString());
-        response = invokeurl
-        [
-            url: ghostBusWebhookUrl
-            type: POST
-            parameters: webhookData.toString()
-        ];
-    }
+    // Ghost-bus trigger + standby threshold alerts are handled by the
+    // Overflow_Standby On-Add workflow (06_overflow_standby.dg) to avoid double-firing.
     return;
 }
 
@@ -129,6 +112,8 @@ if (empRecords.size() > 0) {
     if (currentCO2.isNull()) { currentCO2 = 0.0; }
     currentPoints = empRecord.get("Eco_Points").toLong();
     if (currentPoints.isNull()) { currentPoints = 0; }
+    currentTrips = empRecord.get("Total_Trips").toLong();
+    if (currentTrips.isNull()) { currentTrips = 0; }
 
     newCO2 = currentCO2 + co2Saved;
     newPoints = currentPoints + (co2Saved * 10).toLong();
@@ -136,7 +121,7 @@ if (empRecords.size() > 0) {
     empUpdate = map();
     empUpdate.put("CO2_Total_Saved", newCO2.setScale(2));
     empUpdate.put("Eco_Points", newPoints);
-    empUpdate.put("Total_Trips", empRecord.get("Total_Trips").toLong() + 1);
+    empUpdate.put("Total_Trips", currentTrips + 1);
 
     zoho.creator.updateRecord(
         "centrocdx",

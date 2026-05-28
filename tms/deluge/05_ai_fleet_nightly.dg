@@ -42,7 +42,7 @@ for each booking in historicalBookings {
     if (route.isNull()) { route = booking.get("Route"); }
     if (route.isNull()) { continue; }
 
-    if (!routeStats.containsKey(route)) {
+    if (!routeStats.containKey(route)) {
         rs = map();
         rs.put("total_bookings", 0);
         rs.put("mon", 0); rs.put("tue", 0); rs.put("wed", 0);
@@ -97,7 +97,7 @@ aiPrompt = "You are a fleet optimization AI for Centro Transportation Company in
     "Prioritize higher-capacity buses for higher-demand routes. Keep reasons under 20 words.";
 
 // ── Call Gemini API ───────────────────────────────────────────────────────────
-geminiKey = zoho.encryption.urlDecode("YOUR_GEMINI_KEY_FROM_ZOHO_SECRETS"); // Use Zoho Secrets Manager
+geminiKey = zoho.secrets.fetch("GEMINI_API_KEY"); // store the key in Zoho Secrets Manager as GEMINI_API_KEY
 geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" + geminiKey;
 
 aiRequestBody = map();

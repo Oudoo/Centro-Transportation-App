@@ -32,7 +32,7 @@ for each booking in todayBookings {
     if (route.isNull()) { route = booking.get("Route"); }
     if (route.isNull()) { continue; }
 
-    if (routeDemand.containsKey(route)) {
+    if (routeDemand.containKey(route)) {
         routeDemand.put(route, routeDemand.get(route) + 1);
     } else {
         routeDemand.put(route, 1);

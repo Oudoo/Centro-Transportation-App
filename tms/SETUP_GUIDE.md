@@ -3,11 +3,28 @@
 
 ---
 
-## Current App State (Audited via MCP)
-- **App Link**: `centrocdx/transportation-app`
-- **Existing Forms**: `Bus_Schedule`, `New_Booking_Request`, `Employee_Registration`
-- **Existing Reports**: `All_Bus_Schedules`, `All_Bookings`, `All_Employee_Registrations`
+## Current App State (Re-audited via MCP — 2026)
+- **App Link**: `centrocdx/transportation-app` (production environment)
+- **Existing Forms** (KEEP — do not delete):
+  - `Employee_Registration` — employee master. **Keep + enhance.** Verified fields: `Name` (composite First/Last), `Email`, `Phone_Number`, `HITS_ID`, `Campaign` (dropdown). The booking workflow looks employees up by **`Email`** (not `Employee_Email`).
+  - `Bus_Schedule` — legacy schedule: `Bus_Code`, `Dropoff_Point` (dropdown), `Available_From`, `Available_To`, `Number_of_Seats`. Keep as employee-app fallback; retire after `Active_Timings` is live.
+  - `New_Booking_Request` — legacy booking, all lookup fields. Keep as fallback; retire after `Bookings` is live.
+- **Existing Reports**: `All_Employee_Registrations`, `All_Bus_Schedules`, `All_Bookings`
 - **Existing Pages**: None
+- **Existing Data**: test records only (1 employee, 2 schedules, 3 bookings, mid-2024) — safe to keep or clear.
+
+---
+
+## Build Order (create in this sequence — a lookup needs its target form to exist first)
+
+1. **Extend `Employee_Registration`** with the eco fields (Phase 2) — *master*
+2. **`Buses`** — its `Driver` lookup → `Employee_Registration` — *master*
+3. **`Active_Timings`** — its `Bus` lookup → `Buses` — *trips*
+4. **`Bookings`** — `Employee_Name` lookup → `Employee_Registration`; `Trip_ID` holds an `Active_Timings` record id — *transactional*
+5. **`Overflow_Standby`, `Live_Tracking_Logs`, `Heatmap_Data`, `AI_Fleet_Recommendations`, `Incident_Reports`** — *supporting, no cross-deps*
+6. **Reports** auto-generate per form; build the `Eco_Leaderboard` view last.
+
+> After you create each form, I verify it via MCP (`getFields`) and seed realistic test data before you move on — per the verification protocol.
 
 ---
 
@@ -193,7 +210,7 @@ Add to existing `Employee_Registration` form:
 ## Phase 3: Deluge Workflows to Configure
 
 ### Workflow 1: On Booking Submit
-- **Form**: `Bookings` (or `New_Booking_Request`)
+- **Form**: `Bookings` (the new TMS form only — **not** `New_Booking_Request`, which lacks `Trip_ID`/`Status`/`QR_Hash` and would error at runtime)
 - **Trigger**: On Add
 - **Script**: `tms/deluge/01_on_booking_submit.dg`
 - **What it does**: Validates seat count, generates QR hash, updates CO2 savings, sends Cliq notification
@@ -273,7 +290,7 @@ Connect `Employee_Registration` data automatically:
 
 ## Phase 6: Progressive Web App (PWA) Setup
 
-For the Employee and Driver apps to work as PWA (offline capable), add these files to your Creator Pages:
+For the Employee and Driver apps to work as PWA (offline capable), deploy the ready-made files in **`tms/pwa/`** (`employee-manifest.json`, `driver-manifest.json`, `sw.js`) as Creator Page resources. They are reproduced below for reference:
 
 ### `employee-manifest.json`
 ```json
