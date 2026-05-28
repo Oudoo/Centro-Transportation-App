@@ -1,0 +1,153 @@
+/**
+ * SCHEDULED FUNCTION: I2 — AI Dynamic Route (Pickup-Sequence) Optimization
+ * Schedule: Every day at 02:30 AM (Cairo time, after fleet allocation at 02:00)
+ * Purpose: For each of tomorrow's trips, gather booked passengers' pickup points and
+ *          ask Gemini for the optimal pickup ORDER (minimise travel/time). Store the
+ *          sequence on the trip and log a route_optimization recommendation.
+ *
+ * Reads:  All_Active_Timings (tomorrow), All_TMS_Bookings (confirmed per trip)
+ * Writes: Active_Timings.Optimized_Sequence (Multi Line) + .Optimized_At (DateTime)
+ *         AI_Fleet_Recommendations (Type "route_optimization")
+ *
+ * Pickup point resolution per booking: Pickup_Point → Pickup_Zone → Employee home zone.
+ */
+
+tomorrow = zoho.today.addDay(1).toString("yyyy-MM-dd");
+
+tomorrowTrips = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Active_Timings",
+    "Status != \"Cancelled\" && Departure_Time >= " + '"' + tomorrow + '"'
+);
+
+geminiKey = zoho.secrets.fetch("GEMINI_API_KEY");
+geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + geminiKey;
+
+optimizedCount = 0;
+for each trip in tomorrowTrips {
+    tripId = trip.get("ID");
+    route = trip.get("Route");
+    if (route.isNull()) { route = trip.get("Dropoff_Point"); }
+
+    bookings = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_TMS_Bookings",
+        "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Confirmed\""
+    );
+    if (bookings.size() < 2) { continue; } // nothing to optimise for 0–1 stops
+
+    // ── Collect unique pickup points ──────────────────────────────────────────
+    pickupSet = map(); // point -> passenger count
+    for each booking in bookings {
+        pt = booking.get("Pickup_Point");
+        if (pt.isNull()) { pt = booking.get("Pickup_Zone"); }
+        if (pt.isNull()) { pt = trip.get("Origin_Zone"); }
+        if (pt.isNull()) { continue; }
+        if (pickupSet.containKey(pt)) {
+            pickupSet.put(pt, pickupSet.get(pt).toLong() + 1);
+        } else {
+            pickupSet.put(pt, 1);
+        }
+    }
+    if (pickupSet.size() < 2) { continue; }
+
+    pickupList = list();
+    for each pt in pickupSet.keys() {
+        item = map();
+        item.put("point", pt);
+        item.put("passengers", pickupSet.get(pt));
+        pickupList.add(item);
+    }
+
+    // ── Ask Gemini for the optimal pickup order ───────────────────────────────
+    aiPrompt = "You are a routing optimizer for Centro Transportation in Cairo, Egypt. " +
+        "A bus serves route '" + route + "' tomorrow (" + tomorrow + "). " +
+        "Order these pickup points to minimise total travel time, ending at the workplace. " +
+        "Pickup points with passenger counts: " + pickupList.toString() + ". " +
+        "Return ONLY a JSON array of point names in pickup order, e.g. [\"A\",\"B\",\"C\"].";
+
+    aiRequestBody = map();
+    part = map(); part.put("text", aiPrompt);
+    parts = list(); parts.add(part);
+    contentItem = map(); contentItem.put("parts", parts);
+    contents = list(); contents.add(contentItem);
+    aiRequestBody.put("contents", contents);
+
+    aiResponse = invokeurl
+    [
+        url: geminiUrl
+        type: POST
+        parameters: aiRequestBody.toString()
+        content-type: "application/json"
+    ];
+
+    aiText = "";
+    if (!aiResponse.isNull()) {
+        candidates = aiResponse.get("candidates");
+        if (!candidates.isNull() && candidates.size() > 0) {
+            aiText = candidates.get(0).get("content").get("parts").get(0).get("text");
+        }
+    }
+
+    // ── Parse ordered sequence (fallback: demand-desc order) ──────────────────
+    orderedSeq = list();
+    if (!aiText.isEmpty() && aiText.indexOf("[") >= 0) {
+        seqJson = aiText.substring(aiText.indexOf("["), aiText.lastIndexOf("]") + 1);
+        if (!seqJson.isEmpty()) { orderedSeq = seqJson.toJSONList(); }
+    }
+    if (orderedSeq.isEmpty()) {
+        // Fallback: order by passenger count descending (most boardings first)
+        remaining = pickupList;
+        while (!remaining.isEmpty()) {
+            bestIdx = 0; bestCount = -1; idx = 0;
+            for each it in remaining {
+                if (it.get("passengers").toLong() > bestCount) {
+                    bestCount = it.get("passengers").toLong();
+                    bestIdx = idx;
+                }
+                idx = idx + 1;
+            }
+            orderedSeq.add(remaining.get(bestIdx).get("point"));
+            remaining.remove(remaining.get(bestIdx));
+        }
+    }
+
+    // ── Persist sequence on the trip ──────────────────────────────────────────
+    seqText = "";
+    stopNo = 0;
+    for each stop in orderedSeq {
+        stopNo = stopNo + 1;
+        seqText = seqText + stopNo + ". " + stop + "\n";
+    }
+
+    tripUpdate = map();
+    tripUpdate.put("Optimized_Sequence", seqText);
+    tripUpdate.put("Optimized_At", zoho.currenttime);
+    zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Active_Timings", tripId, tripUpdate);
+
+    // ── Log a recommendation for the management panel ─────────────────────────
+    recData = map();
+    recData.put("Recommendation_Title", "🗺️ Optimized pickup order: " + route);
+    recData.put("Recommendation_Body", orderedSeq.size() + " stops sequenced for " + bookings.size() + " passengers.\n" + seqText);
+    recData.put("Priority", "Medium");
+    recData.put("Confidence_Score", aiText.isEmpty() ? 65 : 85);
+    recData.put("Type", "route_optimization");
+    recData.put("Route", route);
+    recData.put("Trip_ID", tripId);
+    recData.put("Status", "Pending");
+    recData.put("Target_Date", tomorrow);
+    recData.put("Generated_At", zoho.currenttime);
+    recData.put("Analysis_Type", "AI_Route_Optimization");
+    zoho.creator.createRecord("centrocdx", "transportation-app", "AI_Fleet_Recommendations", recData);
+
+    optimizedCount = optimizedCount + 1;
+}
+
+if (optimizedCount > 0) {
+    msg = "🗺️ *Route Optimization — " + tomorrow + "*\n" +
+        optimizedCount + " trip pickup sequences optimized. Review in Management → AI Insights.";
+    zoho.cliq.postToChannel("transportation-ops", msg);
+}
+info "Route optimization: " + optimizedCount + " trips sequenced for " + tomorrow;

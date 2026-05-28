@@ -160,6 +160,10 @@
       <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1v2h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2v-2h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/></svg>
       AI Insights
     </div>
+    <div class="sidebar-item" onclick="setView('drivers')">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      Driver Scorecard
+    </div>
 
     <div class="sidebar-section" style="margin-top:8px;">Active Buses</div>
     <div id="bus-sidebar-list">
@@ -243,6 +247,22 @@
       </div>
       <div id="ai-insights-list">
         <div style="text-align:center;padding:30px;color:var(--muted);">Loading AI recommendations...</div>
+      </div>
+    </div>
+
+    <!-- Driver Scorecard View (F2) -->
+    <div id="view-drivers" style="display:none;padding:16px;overflow-y:auto;height:100%;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <h2 style="font-size:1rem;font-weight:700;color:white;">Driver Punctuality Scorecard</h2>
+          <p style="font-size:0.78rem;color:var(--muted);margin-top:2px;">Weekly aggregation — generated every Monday 06:00</p>
+        </div>
+        <select id="driver-week" onchange="loadDriverPerformance()" style="background:var(--card);color:white;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:0.8rem;">
+          <option value="">Latest week</option>
+        </select>
+      </div>
+      <div id="driver-scorecard-list">
+        <div style="text-align:center;padding:30px;color:var(--muted);">Loading driver performance...</div>
       </div>
     </div>
   </main>
@@ -684,8 +704,9 @@ function renderAIInsights(insights) {
     el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">No AI recommendations available. Click "Run Analysis Now" to generate insights.</div>';
     return;
   }
+  const ICONS = { overflow: '🚌', optimization: '⚡', route_optimization: '🗺️', fleet: '🚍', missing_route: '➕' };
   el.innerHTML = insights.map(ins => {
-    const typeIcon = ins.Type === 'overflow' ? '🚌' : ins.Type === 'optimization' ? '⚡' : '📊';
+    const typeIcon = ICONS[ins.Type] || '📊';
     const conf = ins.Confidence || ins.Confidence_Score || '--';
     return `
       <div class="ai-insight-card">
@@ -693,7 +714,7 @@ function renderAIInsights(insights) {
           <div class="insight-title">${typeIcon} ${ins.Title || ins.Recommendation_Title}</div>
           <span style="font-size:0.7rem;background:rgba(99,102,241,0.2);color:var(--primary);padding:2px 7px;border-radius:10px;">${conf}% confidence</span>
         </div>
-        <div class="insight-body">${ins.Body || ins.Recommendation_Body}</div>
+        <div class="insight-body" style="white-space:pre-line;">${ins.Body || ins.Recommendation_Body}</div>
         <div>
           <button class="approve-btn" onclick="approveAIInsight('${ins.ID}', this)">✓ Approve</button>
           <button class="dismiss-btn" onclick="dismissAIInsight('${ins.ID}', this)">Dismiss</button>
@@ -886,16 +907,74 @@ async function cancelRoute(tripId) {
 // ─────────────────────────────────────────────
 function setView(name) {
   st.currentView = name;
-  ['map', 'heatmap', 'routes', 'ai'].forEach(v => {
-    document.getElementById(`view-${v}`).style.display = v === name ? 'block' : 'none';
+  ['map', 'heatmap', 'routes', 'ai', 'drivers'].forEach(v => {
+    const el = document.getElementById(`view-${v}`);
+    if (el) el.style.display = v === name ? 'block' : 'none';
   });
-  document.querySelectorAll('.sidebar-item').forEach((el, i) => {
-    const views = ['map', 'heatmap', 'routes', 'ai'];
+  document.querySelectorAll('.sidebar-item').forEach((el) => {
     el.classList.toggle('active', el.getAttribute('onclick') === `setView('${name}')`);
   });
   if (name === 'map') { setTimeout(() => st.map?.invalidateSize(), 50); }
   if (name === 'heatmap') loadHeatmapData();
   if (name === 'ai') loadAIInsights();
+  if (name === 'drivers') loadDriverPerformance();
+}
+
+// ─────────────────────────────────────────────
+// F2 — DRIVER PUNCTUALITY SCORECARD
+// ─────────────────────────────────────────────
+async function loadDriverPerformance() {
+  const list = document.getElementById('driver-scorecard-list');
+  if (!list) return;
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: 'All_Driver_Performances',
+      criteria: 'Rank != 0',
+    });
+    let rows = (resp.code === 3000 && resp.data) ? resp.data : [];
+    if (!rows.length) { renderDriverScorecard([]); return; }
+
+    // Populate the week selector, then filter to the chosen (or latest) week
+    const weeks = [...new Set(rows.map(r => r.Week_Start).filter(Boolean))].sort().reverse();
+    const sel = document.getElementById('driver-week');
+    if (sel && sel.options.length <= 1) {
+      weeks.forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = `Week of ${w}`; sel.appendChild(o); });
+    }
+    const chosen = (sel && sel.value) ? sel.value : weeks[0];
+    rows = rows.filter(r => r.Week_Start === chosen)
+               .sort((a, b) => parseInt(a.Rank || 99) - parseInt(b.Rank || 99));
+    renderDriverScorecard(rows);
+  } catch (e) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">No driver scorecard data yet. It generates every Monday 06:00.</div>';
+  }
+}
+
+function renderDriverScorecard(rows) {
+  const list = document.getElementById('driver-scorecard-list');
+  if (!rows.length) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">No driver scorecard data yet. It generates every Monday 06:00.</div>';
+    return;
+  }
+  const medal = (r) => (r == 1 ? '🥇' : r == 2 ? '🥈' : r == 3 ? '🥉' : `#${r}`);
+  const scoreColor = (s) => (s >= 85 ? 'var(--success)' : s >= 65 ? 'var(--accent)' : 'var(--danger)');
+  list.innerHTML = rows.map(r => {
+    const score = parseFloat(r.Score || 0);
+    return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px;">
+      <div style="font-size:1.3rem;min-width:36px;text-align:center;">${medal(r.Rank)}</div>
+      <div style="flex:1;">
+        <div style="font-weight:700;color:white;">${r.Driver_Name || r.Driver_Email || 'Driver'}</div>
+        <div style="font-size:0.74rem;color:var(--muted);margin-top:2px;">
+          ${r.On_Time_Pct || 0}% on-time · ${r.Trips_Completed || 0} trips · ${r.Late_Count || 0} late · ${r.Anomaly_Count || 0} anomalies
+          ${parseFloat(r.Avg_Delay_Min || 0) > 0 ? ` · avg +${r.Avg_Delay_Min}min` : ''}
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:1.3rem;font-weight:700;color:${scoreColor(score)};">${score.toFixed(0)}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">SCORE</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function switchPanelTab(name) {

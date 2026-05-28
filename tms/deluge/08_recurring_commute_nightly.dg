@@ -1,0 +1,92 @@
+/**
+ * SCHEDULED FUNCTION: F1 — Smart Recurring Commute Auto-Booker
+ * Schedule: Every day at 03:00 AM (Cairo time, after nightly fleet allocation)
+ * Purpose: For each active Commute_Template whose weekly pattern includes tomorrow,
+ *          auto-create a Bookings record so the employee keeps their usual seat.
+ *          The created booking fires 01_on_booking_submit (seat decrement + QR).
+ *
+ * Commute_Templates fields (create in Creator Studio):
+ *   Employee_Email (Email), Employee_ID (Single Line), Route (Single Line),
+ *   Days_Active (Single Line, comma list e.g. "mon,tue,wed,thu,fri"),
+ *   Active (Dropdown Yes/No), Departure_Window (Single Line, optional),
+ *   Last_Auto_Booked (Date, written by this script)
+ */
+
+tomorrow = zoho.today.addDay(1).toString("yyyy-MM-dd");
+tomorrowDow = zoho.today.addDay(1).dayOfWeek(); // 1=Mon … 7=Sun
+dayKey = (tomorrowDow == 1 ? "mon" : tomorrowDow == 2 ? "tue" : tomorrowDow == 3 ? "wed" : tomorrowDow == 4 ? "thu" : tomorrowDow == 5 ? "fri" : tomorrowDow == 6 ? "sat" : "sun");
+
+// ── Active templates that include tomorrow's weekday ──────────────────────────
+templates = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Commute_Templates",
+    "Active == \"Yes\""
+);
+
+// ── Tomorrow's active trips, indexed by route ─────────────────────────────────
+tomorrowTrips = zoho.creator.getRecords(
+    "centrocdx",
+    "transportation-app",
+    "All_Active_Timings",
+    "Status != \"Cancelled\" && Departure_Time >= " + '"' + tomorrow + '"'
+);
+
+tripByRoute = map();
+for each trip in tomorrowTrips {
+    rt = trip.get("Route");
+    if (rt.isNull()) { rt = trip.get("Dropoff_Point"); }
+    if (rt.isNull()) { continue; }
+    if (!tripByRoute.containKey(rt)) { tripByRoute.put(rt, trip); } // first match wins
+}
+
+bookedCount = 0;
+skippedNoTrip = 0;
+skippedDuplicate = 0;
+
+for each tmpl in templates {
+    daysActive = tmpl.get("Days_Active");
+    if (daysActive.isNull()) { continue; }
+    if (!daysActive.toLowerCase().contains(dayKey)) { continue; } // not scheduled tomorrow
+
+    route = tmpl.get("Route");
+    if (route.isNull()) { continue; }
+    empEmail = tmpl.get("Employee_Email");
+
+    // Resolve tomorrow's trip for this route
+    trip = tripByRoute.get(route);
+    if (trip.isNull()) { skippedNoTrip = skippedNoTrip + 1; continue; }
+    tripId = trip.get("ID");
+
+    // Skip if this employee already has a booking on this trip
+    existing = zoho.creator.getRecords(
+        "centrocdx",
+        "transportation-app",
+        "All_TMS_Bookings",
+        "Trip_ID == " + '"' + tripId + '"' + " && Employee_Email == " + '"' + empEmail + '"' + " && Status != \"Cancelled\""
+    );
+    if (!existing.isEmpty()) { skippedDuplicate = skippedDuplicate + 1; continue; }
+
+    // Create the booking — On-Add workflow does seat checks, QR, CO2, standby fallback
+    bookingData = map();
+    bookingData.put("Employee_ID", tmpl.get("Employee_ID"));
+    bookingData.put("Employee_Email", empEmail);
+    bookingData.put("Trip_ID", tripId);
+    bookingData.put("Source", "Recurring_Auto");
+    zoho.creator.createRecord("centrocdx", "transportation-app", "Bookings", bookingData);
+    bookedCount = bookedCount + 1;
+
+    // Stamp the template
+    tmplUpdate = map();
+    tmplUpdate.put("Last_Auto_Booked", tomorrow);
+    zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Commute_Templates", tmpl.get("ID"), tmplUpdate);
+}
+
+// ── Summary to ops channel ────────────────────────────────────────────────────
+summary = "🔁 *Recurring Commute Auto-Booking — " + tomorrow + " (" + dayKey + ")*\n" +
+    "✅ Booked: " + bookedCount + "\n" +
+    "⏭️ Already booked: " + skippedDuplicate + "\n" +
+    "⚠️ No trip for route: " + skippedNoTrip;
+zoho.cliq.postToChannel("transportation-ops", summary);
+
+info "Recurring commute: " + bookedCount + " booked, " + skippedDuplicate + " dup, " + skippedNoTrip + " no-trip for " + tomorrow;

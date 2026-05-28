@@ -199,6 +199,11 @@
     <h2 style="font-size:1rem;font-weight:700;color:white;">Passenger Manifest</h2>
     <button onclick="refreshManifest()" style="background:none;border:none;color:var(--muted);font-size:0.8rem;cursor:pointer;">Refresh</button>
   </div>
+  <!-- I2 — AI-optimized pickup sequence -->
+  <div id="pickup-sequence" class="card" style="display:none;margin-bottom:12px;border-left:3px solid var(--accent,#f59e0b);">
+    <div style="font-size:0.8rem;font-weight:700;color:white;margin-bottom:6px;">🗺️ Optimized Pickup Order</div>
+    <div id="pickup-sequence-body" style="font-size:0.82rem;color:var(--muted);white-space:pre-line;line-height:1.5;"></div>
+  </div>
   <div class="card" style="padding:0;overflow:hidden;">
     <div id="pax-list" style="padding:4px 16px;"></div>
   </div>
@@ -335,6 +340,7 @@ async function loadDriverTrip() {
       document.getElementById('driver-bus').textContent = 'Bus: ' + (state.currentTrip.Bus_Code || state.currentTrip.Bus?.display_value || '--');
       document.getElementById('trip-dest').textContent = state.currentTrip.Route || state.currentTrip.Dropoff_Point || 'Destination';
       document.getElementById('stat-seats').textContent = state.currentTrip.Available_Seats || '--';
+      renderPickupSequence(state.currentTrip.Optimized_Sequence);
       refreshManifest();
     }
   } catch (e) { console.warn('Trip load:', e); }
@@ -643,6 +649,18 @@ async function refreshManifest() {
   }
 }
 
+function renderPickupSequence(seq) {
+  const wrap = document.getElementById('pickup-sequence');
+  const body = document.getElementById('pickup-sequence-body');
+  if (!wrap || !body) return;
+  if (seq && seq.trim()) {
+    body.textContent = seq.trim();
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
 function renderPassengerList() {
   const list = document.getElementById('pax-list');
   const boarded = state.passengerList.filter(p => p.Status === 'Boarded').length;
@@ -657,11 +675,12 @@ function renderPassengerList() {
   list.innerHTML = state.passengerList.map(p => {
     const name = p.Employee_Name?.display_value || p.Employee_ID || 'Passenger';
     const isBoarded = p.Status === 'Boarded';
+    const seat = p.Seat_Number ? `<span style="font-size:0.7rem;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 6px;border-radius:6px;margin-left:6px;">Seat ${p.Seat_Number}</span>` : '';
     return `
       <div class="pax-row">
         <div class="pax-avatar">${name.charAt(0).toUpperCase()}</div>
         <div style="flex:1;">
-          <div style="font-size:0.88rem;font-weight:600;">${name}</div>
+          <div style="font-size:0.88rem;font-weight:600;">${name}${seat}</div>
           <div style="font-size:0.73rem;color:var(--muted);">${p.HITS_ID || p.Employee_Email || '--'}</div>
         </div>
         <div class="scan-badge ${isBoarded ? 'scanned' : 'not-scanned'}" style="font-size:0.75rem;">
