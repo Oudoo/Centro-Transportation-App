@@ -627,25 +627,21 @@ async function confirmBooking() {
   btn.textContent = 'Booking...';
 
   const trip = state.selectedTrip;
-  const qrHash = generateQRHash(state.currentUser.email, trip.ID, Date.now());
 
   try {
+    // Server-authoritative: the On-Add workflow (01_on_booking_submit) generates
+    // QR_Hash, Status, CO2_Saved and Booking_Time. The client never mints the hash
+    // (a client-side hash would never match the stored one, breaking boarding).
     const formData = trip.isLegacy ? {
       Employee_Name: state.currentUser.name,
       HITS_ID: state.currentUser.hitsId || state.currentUser.id,
       Employee_Email: state.currentUser.email,
       Dropoff_Point: trip.Dropoff_Point,
       Date_Time_of_Departure: trip.Available_From,
-      QR_Hash: qrHash,
-      Status: 'Confirmed',
-      CO2_Saved: (APP_CONFIG.avgRouteKm * APP_CONFIG.co2PerKm).toFixed(2),
     } : {
       Employee_ID: state.currentUser.id,
       Employee_Email: state.currentUser.email,
       Trip_ID: trip.ID,
-      QR_Hash: qrHash,
-      Status: 'Confirmed',
-      CO2_Saved: (APP_CONFIG.avgRouteKm * APP_CONFIG.co2PerKm).toFixed(2),
     };
 
     const resp = await ZOHO.CREATOR.API.addRecord({
@@ -655,9 +651,22 @@ async function confirmBooking() {
     });
 
     if (resp.code === 3000) {
-      state.activeBooking = { ...formData, ID: resp.data?.ID };
+      const newId = resp.data?.ID;
       closeBookingModal();
       showToast('✅ Booking confirmed! Check your QR pass.');
+      // Re-fetch the saved record to read the server-generated QR_Hash.
+      let booking = { ...formData, ID: newId };
+      if (!trip.isLegacy && newId) {
+        try {
+          const fetched = await ZOHO.CREATOR.API.getAllRecords({
+            appName: APP_CONFIG.appName,
+            reportName: APP_CONFIG.reports.bookings,
+            criteria: `ID == ${newId}`,
+          });
+          if (fetched.code === 3000 && fetched.data && fetched.data.length) booking = fetched.data[0];
+        } catch (e) { /* fall back to the local copy if the re-fetch fails */ }
+      }
+      state.activeBooking = booking;
       showActiveBanner(state.activeBooking);
       generateQRPass(state.activeBooking);
       await loadMyBookings();
@@ -695,16 +704,6 @@ async function joinStandby(trip, tripId) {
 // ─────────────────────────────────────────────
 // QR PASS
 // ─────────────────────────────────────────────
-function generateQRHash(email, tripId, ts) {
-  let hash = 0;
-  const str = `${email}:${tripId}:${ts}`;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return `CTMS-${Math.abs(hash).toString(16).toUpperCase().padStart(8, '0')}`;
-}
-
 function generateQRPass(booking) {
   const pass = document.getElementById('qr-pass');
   const noBooking = document.getElementById('qr-no-booking');
@@ -712,17 +711,19 @@ function generateQRPass(booking) {
   pass.style.display = 'block';
   noBooking.style.display = 'none';
 
-  const qrData = JSON.stringify({
-    hash: booking.QR_Hash,
-    emp: state.currentUser.email,
-    trip: booking.Trip_ID || booking.ID,
-    ts: Date.now(),
-  });
-
-  QRCode.toCanvas(document.getElementById('qr-canvas'), qrData, {
-    width: 180, margin: 1,
-    color: { dark: '#000000', light: '#ffffff' },
-  });
+  // QR_Hash is set server-side by the booking workflow; legacy bookings have none.
+  if (booking.QR_Hash) {
+    const qrData = JSON.stringify({
+      hash: booking.QR_Hash,
+      emp: state.currentUser.email,
+      trip: booking.Trip_ID || booking.ID,
+      ts: Date.now(),
+    });
+    QRCode.toCanvas(document.getElementById('qr-canvas'), qrData, {
+      width: 180, margin: 1,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+  }
 
   document.getElementById('pass-name').textContent = state.currentUser.name || '--';
   document.getElementById('pass-hitsid').textContent = state.currentUser.hitsId || '--';
