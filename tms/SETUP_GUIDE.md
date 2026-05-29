@@ -17,6 +17,7 @@
 
 ## Build Order (create in this sequence — a lookup needs its target form to exist first)
 
+0. **`App_Settings`** + **`Routes`** — *foundation master data, build first.* These make the system facilities-editable (thresholds, CO₂ factor, map center, route list) with **no code changes**. Dashboards + Deluge read them at runtime and fall back to safe defaults if a key is missing.
 1. **Extend `Employee_Registration`** with the eco fields (Phase 2) — *master*
 2. **`Buses`** — its `Driver` lookup → `Employee_Registration` — *master*
 3. **`Active_Timings`** — its `Bus` lookup → `Buses` — *trips*
@@ -32,6 +33,59 @@
 ---
 
 ## Phase 1: New Forms to Create in Creator
+
+### 0a. `App_Settings` Form (foundation — makes the app self-serve)
+A simple key/value form the **facilities team edits directly** — no code deploys. Both the dashboards and the Deluge scripts read it at runtime; if a key is missing they fall back to the defaults below.
+
+| Field Display Name | Link Name      | Type        | Notes                          |
+|--------------------|----------------|-------------|--------------------------------|
+| Setting Key        | Setting_Key    | Single Line | Mandatory, Unique (e.g. `proximity_alert_meters`) |
+| Setting Value      | Setting_Value  | Single Line | Stored as text; parsed as number where needed |
+| Category           | Category       | Dropdown    | Geofencing / Overflow / Eco / Tracking / Map / AI |
+| Description        | Description    | Multi Line  | Plain-language explanation for facilities |
+
+**Report**: `All_App_Settings`
+
+**Seed these rows** (I'll inject them via MCP in Stage 3, or facilities can type them):
+
+| Setting_Key | Setting_Value | Category | What it controls |
+|---|---|---|---|
+| `proximity_alert_meters` | `1000` | Geofencing | Distance at which passengers get the "bus arriving" alert |
+| `deviation_threshold_meters` | `800` | Geofencing | Off-route distance that flags a deviation |
+| `stationary_alert_minutes` | `10` | Geofencing | Minutes stopped before a breakdown alert |
+| `ghost_bus_trigger_count` | `10` | Overflow | Standby queue size that triggers a ghost bus |
+| `early_warning_count` | `5` | Overflow | Standby size for the early-warning ping |
+| `co2_per_km` | `0.21` | Eco | kg CO₂ saved per km vs a car |
+| `avg_route_length_km` | `25` | Eco | Default route distance when a route has none |
+| `default_total_seats` | `35` | Tracking | Fallback bus capacity |
+| `on_time_grace_minutes` | `5` | AI | Lateness grace in the driver scorecard |
+| `ping_interval_seconds` | `10` | Tracking | Driver GPS ping frequency |
+| `mgmt_refresh_seconds` | `15` | Tracking | Management dashboard auto-refresh |
+| `map_center_lat` | `30.0444` | Map | Default map center latitude |
+| `map_center_lng` | `31.2357` | Map | Default map center longitude |
+
+> These mirror `tms/config/app-config.json`, which now serves as the **seed list** — the live `App_Settings` form is the source of truth at runtime.
+
+---
+
+### 0b. `Routes` Form (foundation — the single source of truth for routes)
+Replaces the hardcoded `Dropoff 1/2/3` dropdown. Facilities add/rename/retire routes here; the employee "Schedule" dropdown and the management "Deploy Route" picker populate from it automatically.
+
+| Field Display Name | Link Name     | Type        | Notes                              |
+|--------------------|---------------|-------------|------------------------------------|
+| Route Name         | Route_Name    | Single Line | Mandatory, Unique (e.g. `Maadi → HQ`) |
+| Origin Zone        | Origin_Zone   | Single Line |                                    |
+| Dropoff Point      | Dropoff_Point | Single Line | Display label for the destination  |
+| Distance Km        | Distance_Km   | Decimal     | Feeds CO₂ calc (else uses default) |
+| Dest Lat           | Dest_Lat      | Decimal     | Optional — destination GPS         |
+| Dest Lng           | Dest_Lng      | Decimal     | Optional — destination GPS         |
+| Active             | Active        | Dropdown    | `Yes` / `No` (dropdowns filter `Active == "Yes"`) |
+
+**Report**: `All_Routes`
+
+> **Recommended:** convert the `Dropoff_Point` dropdowns on `Bus_Schedule` / `New_Booking_Request` (and the `Route` fields elsewhere) to **Lookups → `Routes`** so every form draws from this one list. Existing dropdown choices keep working until you switch them.
+
+---
 
 ### 1. `Buses` Form
 | Field Display Name     | Link Name       | Type          | Notes                          |
@@ -257,6 +311,9 @@ Add to existing `Employee_Registration` form:
 ---
 
 ## Phase 3: Deluge Workflows to Configure
+
+> **Dynamic thresholds:** scripts `01`, `02`, `06`, `09` read their numeric thresholds from `All_App_Settings` at the top of the script (with the same fallbacks listed in 0a). Facilities can retune proximity distance, ghost-bus trigger, CO₂ factor, on-time grace, etc. from the form — no code edit. If the `App_Settings` form doesn't exist yet, the scripts still run on the built-in defaults.
+
 
 ### Workflow 1: On Booking Submit
 - **Form**: `Bookings` (the new TMS form only — **not** `New_Booking_Request`, which lacks `Trip_ID`/`Status`/`QR_Hash` and would error at runtime)
@@ -498,3 +555,4 @@ Beyond the original spec, the following enhancements were built in:
 | **F3 — Seat Selection Map** | Visual seat picker; taken seats greyed; seat shown on manifest | `Seat_Number` on Bookings | Employee booking modal + Driver manifest |
 | **I2 — AI Route Optimization** | Gemini orders pickup stops to cut travel time | `10_ai_route_optimization_nightly.dg` | Driver pickup-order card + Management AI Insights |
 | **Cancel workflow** | Idempotent seat release + standby promotion on cancel | `07_on_booking_cancel.dg` | (Status → Cancelled) |
+| **Self-serve config** | Facilities edit routes + all thresholds with no code | `App_Settings` + `Routes` forms; loaders in 01/02/06/09 | Dynamic dropdowns (employee Schedule, mgmt Deploy) + live charts |

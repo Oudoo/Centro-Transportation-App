@@ -17,7 +17,11 @@
  * On-time = Actual_Departure within ON_TIME_GRACE_MIN of scheduled Departure_Time.
  */
 
-ON_TIME_GRACE_MIN = 5;
+// On-time grace is facilities-editable via App_Settings (fallback 5 min)
+settingsMap = map();
+allSettings = zoho.creator.getRecords("centrocdx", "transportation-app", "All_App_Settings");
+for each s in allSettings { settingsMap.put(s.get("Setting_Key"), s.get("Setting_Value")); }
+ON_TIME_GRACE_MIN = settingsMap.containKey("on_time_grace_minutes") ? settingsMap.get("on_time_grace_minutes").toLong() : 5;
 
 weekStart = zoho.today.addDay(-7).toString("yyyy-MM-dd");
 weekEnd = zoho.today.toString("yyyy-MM-dd");

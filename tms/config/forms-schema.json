@@ -1,5 +1,7 @@
 {
   "newForms": [
+    "App_Settings",
+    "Routes",
     "Buses",
     "Active_Timings",
     "Bookings",
@@ -7,7 +9,9 @@
     "Heatmap_Data",
     "Overflow_Standby",
     "AI_Fleet_Recommendations",
-    "Incident_Reports"
+    "Incident_Reports",
+    "Commute_Templates",
+    "Driver_Performance"
   ],
   "existingFormsToExtend": [
     {
@@ -16,6 +20,8 @@
     }
   ],
   "newReports": [
+    "All_App_Settings",
+    "All_Routes",
     "All_Buses",
     "All_Active_Timings",
     "All_TMS_Bookings",
@@ -24,6 +30,8 @@
     "All_Overflow_Standby",
     "All_AI_Fleet_Recommendations",
     "All_Incident_Reports",
+    "All_Commute_Templates",
+    "All_Driver_Performances",
     "Eco_Leaderboard"
   ]
 }

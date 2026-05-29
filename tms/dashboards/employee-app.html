@@ -440,21 +440,58 @@ let state = {
 // ─────────────────────────────────────────────
 ZOHO.CREATOR.init().then(() => {
   return ZOHO.CREATOR.UTIL.getInitParams();
-}).then(params => {
+}).then(async params => {
   state.currentUser = params.loginUser || { email: '', name: 'User', id: '' };
   initUI();
+  await loadSettings();   // facilities-editable config (App_Settings) before anything renders
+  await loadRoutes();     // facilities-editable route list (Routes)
   loadUserProfile();
   loadTrips();
   loadMyBookings();
   initMap();
-}).catch(() => {
+}).catch(async () => {
   // Fallback for development/preview mode
   state.currentUser = { email: 'demo@centro.com', name: 'Demo User', id: 'demo-001', hits_id: 'EMP-001' };
   initUI();
+  await loadSettings();
+  await loadRoutes();
   loadTrips();
   loadMyBookings();
   initMap();
 });
+
+// ─────────────────────────────────────────────
+// DYNAMIC CONFIG — App_Settings + Routes master forms
+// (facilities edit these in Creator; hardcoded values below are fallbacks only)
+// ─────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName, reportName: 'All_App_Settings',
+    });
+    if (resp.code === 3000 && resp.data) applySettings(resp.data);
+  } catch (e) { /* keep hardcoded fallbacks */ }
+}
+
+function applySettings(rows) {
+  const m = {};
+  rows.forEach(r => { if (r.Setting_Key) m[r.Setting_Key] = r.Setting_Value; });
+  APP_CONFIG.settings = m;
+  const num = (k, d) => (m[k] !== undefined && m[k] !== '' && !isNaN(parseFloat(m[k]))) ? parseFloat(m[k]) : d;
+  APP_CONFIG.co2PerKm = num('co2_per_km', APP_CONFIG.co2PerKm);
+  APP_CONFIG.avgRouteKm = num('avg_route_length_km', APP_CONFIG.avgRouteKm);
+  APP_CONFIG.defaultSeats = num('default_total_seats', 35);
+  APP_CONFIG.mapCenter = [num('map_center_lat', 30.0444), num('map_center_lng', 31.2357)];
+}
+
+async function loadRoutes() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName, reportName: 'All_Routes', criteria: 'Active == "Yes"',
+    });
+    state.routes = (resp.code === 3000 && resp.data) ? resp.data : [];
+  } catch (e) { state.routes = []; }
+}
 
 function initUI() {
   const hour = new Date().getHours();
@@ -839,7 +876,7 @@ function initMap() {
   const mapEl = document.getElementById('live-map');
   if (!mapEl || state.map) return;
 
-  state.map = L.map('live-map', { zoomControl: true, attributionControl: false }).setView([30.0444, 31.2357], 11);
+  state.map = L.map('live-map', { zoomControl: true, attributionControl: false }).setView(APP_CONFIG.mapCenter || [30.0444, 31.2357], 11);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 19,
   }).addTo(state.map);
@@ -848,7 +885,7 @@ function initMap() {
     html: `<div style="width:32px;height:32px;background:#6366f1;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>`,
     iconSize: [32, 32], iconAnchor: [16, 28],
   });
-  state.busMarker = L.marker([30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
+  state.busMarker = L.marker(APP_CONFIG.mapCenter || [30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
 
   startTrackingPolling();
 }
@@ -1162,7 +1199,9 @@ function initScheduleScreen() {
   // Populate the route dropdown from currently loaded trips (unique routes)
   const sel = document.getElementById('sched-route');
   if (sel && !sel.dataset.filled) {
-    const routes = [...new Set(state.trips.map(t => t.Route || t.Dropoff_Point).filter(Boolean))];
+    // Prefer the facilities-managed Routes master; fall back to routes seen on live trips
+    let routes = (state.routes || []).map(r => r.Route_Name || r.Route).filter(Boolean);
+    if (!routes.length) routes = [...new Set(state.trips.map(t => t.Route || t.Dropoff_Point).filter(Boolean))];
     sel.innerHTML = routes.length
       ? routes.map(r => `<option value="${r}">${r}</option>`).join('')
       : '<option value="">No routes available yet</option>';

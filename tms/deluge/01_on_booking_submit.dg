@@ -81,12 +81,18 @@ bookingUpdate.put("QR_Hash", qrHash);
 bookingUpdate.put("Status", "Confirmed");
 bookingUpdate.put("Booking_Time", zoho.currenttime);
 
-// Calculate CO2 saved (distance * 0.21 kg/km avg car emission offset)
+// Calculate CO2 saved — factor + default distance are facilities-editable (App_Settings)
+settingsMap = map();
+allSettings = zoho.creator.getRecords("centrocdx", "transportation-app", "All_App_Settings");
+for each s in allSettings { settingsMap.put(s.get("Setting_Key"), s.get("Setting_Value")); }
+co2Factor = settingsMap.containKey("co2_per_km") ? settingsMap.get("co2_per_km").toDecimal() : 0.21;
+defaultKm = settingsMap.containKey("avg_route_length_km") ? settingsMap.get("avg_route_length_km").toDecimal() : 25;
+
 routeKm = tripRecord.get("Route_Distance_Km");
 if (routeKm.isNull() || routeKm.toString().isEmpty()) {
-    routeKm = 25; // default Cairo commute estimate
+    routeKm = defaultKm; // facilities-set default when the route has no distance
 }
-co2Saved = routeKm.toDecimal() * 0.21;
+co2Saved = routeKm.toDecimal() * co2Factor;
 bookingUpdate.put("CO2_Saved", co2Saved.setScale(2));
 
 // Update booking (current record being submitted)

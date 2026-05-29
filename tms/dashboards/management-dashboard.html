@@ -316,7 +316,7 @@
   <div id="modal-box">
     <div class="modal-title" id="modal-title">Deploy New Route</div>
     <div id="modal-body">
-      <div class="form-field"><div class="form-label">Route Name / Destination</div><input class="form-input" id="f-route" placeholder="e.g. New Cairo - Dropoff 1"></div>
+      <div class="form-field"><div class="form-label">Route Name / Destination</div><select class="form-input" id="f-route"><option value="">Loading routes…</option></select></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div class="form-field"><div class="form-label">Assign Bus</div><select class="form-input" id="f-bus"><option value="">Select bus...</option></select></div>
         <div class="form-field"><div class="form-label">Departure Time</div><input class="form-input" id="f-depart" type="time"></div>
@@ -378,20 +378,60 @@ ZOHO.CREATOR.init().then(() => {
   init();
 }).catch(() => init());
 
-function init() {
+async function init() {
+  await loadSettings();   // App_Settings master (facilities-editable) — before map/charts
+  await loadRoutes();     // Routes master (facilities-editable)
   initMap();
   initCharts();
-  refreshAll();
+  await refreshAll();
   startAutoRefresh();
   updateClock();
   setInterval(updateClock, 60000);
 }
 
 // ─────────────────────────────────────────────
+// DYNAMIC CONFIG — App_Settings + Routes master forms
+// (facilities edit these in Creator; values below are fallbacks only)
+// ─────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({ appName: APP_CONFIG.appName, reportName: 'All_App_Settings' });
+    if (resp.code === 3000 && resp.data) applySettings(resp.data);
+  } catch (e) { /* keep hardcoded fallbacks */ }
+}
+
+function applySettings(rows) {
+  const m = {};
+  rows.forEach(r => { if (r.Setting_Key) m[r.Setting_Key] = r.Setting_Value; });
+  APP_CONFIG.settings = m;
+  const num = (k, d) => (m[k] !== undefined && m[k] !== '' && !isNaN(parseFloat(m[k]))) ? parseFloat(m[k]) : d;
+  APP_CONFIG.mapCenter = [num('map_center_lat', 30.0444), num('map_center_lng', 31.2357)];
+  APP_CONFIG.refreshMs = num('mgmt_refresh_seconds', APP_CONFIG.refreshMs / 1000) * 1000;
+  APP_CONFIG.defaultSeats = num('default_total_seats', 35);
+}
+
+async function loadRoutes() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({ appName: APP_CONFIG.appName, reportName: 'All_Routes', criteria: 'Active == "Yes"' });
+    st.routes = (resp.code === 3000 && resp.data) ? resp.data : [];
+  } catch (e) { st.routes = []; }
+  populateRouteOptions();
+}
+
+function populateRouteOptions() {
+  const sel = document.getElementById('f-route');
+  if (!sel || sel.tagName !== 'SELECT') return;
+  const routes = (st.routes || []).map(r => r.Route_Name || r.Route).filter(Boolean);
+  sel.innerHTML = routes.length
+    ? '<option value="">Select route…</option>' + routes.map(r => `<option value="${r}">${r}</option>`).join('')
+    : '<option value="">No routes defined — add them in the Routes form</option>';
+}
+
+// ─────────────────────────────────────────────
 // MAP
 // ─────────────────────────────────────────────
 function initMap() {
-  st.map = L.map('global-map', { zoomControl: false, attributionControl: false }).setView([30.0444, 31.2357], 11);
+  st.map = L.map('global-map', { zoomControl: false, attributionControl: false }).setView(APP_CONFIG.mapCenter || [30.0444, 31.2357], 11);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(st.map);
   L.control.zoom({ position: 'bottomright' }).addTo(st.map);
 }
@@ -449,6 +489,35 @@ async function refreshAll() {
   if (document.hidden) return; // skip background polling to spare API quota + battery
   await Promise.all([loadTrips(), loadBookings(), loadAlerts(), loadStandby()]);
   updateHeaderStats();
+  updateCharts();
+}
+
+// Recompute charts from live records (no hardcoded demo numbers)
+function updateCharts() {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  // Bookings per weekday (last 7 days)
+  const byDay = [0, 0, 0, 0, 0, 0, 0];
+  (st.bookings || []).forEach(b => {
+    const ts = b.Booking_Time || b.Added_Time || b.Date_Time_of_Departure;
+    const d = ts ? new Date(ts) : null;
+    if (d && !isNaN(d)) { byDay[(d.getDay() + 6) % 7] += 1; } // Mon=0 … Sun=6
+  });
+  if (st.charts.trips) { st.charts.trips.data.datasets[0].data = byDay; st.charts.trips.update(); }
+
+  // Fleet status doughnut from trip statuses
+  const inProg = (st.trips || []).filter(t => t.Status === 'In_Progress').length;
+  const active = (st.trips || []).filter(t => t.Status === 'Active').length;
+  const done = (st.trips || []).filter(t => t.Status === 'Completed').length;
+  if (st.charts.util) { st.charts.util.data.datasets[0].data = [inProg, active, done]; st.charts.util.update(); }
+
+  // Weekday demand radar (Mon–Fri) from real bookings + fleet capacity
+  if (st.charts.demand) {
+    const demand = byDay.slice(0, 5);
+    const capacity = (st.trips || []).reduce((s, t) => s + (parseInt(t.Total_Seats || t.Number_of_Seats || 0)), 0);
+    st.charts.demand.data.datasets[0].data = demand;
+    st.charts.demand.data.datasets[1].data = [capacity, capacity, capacity, capacity, capacity];
+    st.charts.demand.update();
+  }
 }
 
 async function loadTrips() {
@@ -736,7 +805,7 @@ function initCharts() {
     data: {
       labels: days,
       datasets: [{
-        data: [42,55,48,60,71,38,52],
+        data: [0,0,0,0,0,0,0], // populated by updateCharts() from live bookings
         borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)',
         tension: 0.4, fill: true, pointRadius: 3, pointBackgroundColor: '#6366f1',
       }],
@@ -749,8 +818,8 @@ function initCharts() {
   st.charts.util = new Chart(uCtx, {
     type: 'doughnut',
     data: {
-      labels: ['In Use', 'Available', 'Maintenance'],
-      datasets: [{ data: [6, 3, 1], backgroundColor: ['#10b981', '#6366f1', '#f59e0b'], borderWidth: 0, hoverOffset: 4 }],
+      labels: ['In Progress', 'Active', 'Completed'],
+      datasets: [{ data: [0, 0, 0], backgroundColor: ['#10b981', '#6366f1', '#f59e0b'], borderWidth: 0, hoverOffset: 4 }], // populated by updateCharts()
     },
     options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 10 }, padding: 8 } } }, cutout: '65%' },
   });
@@ -764,9 +833,9 @@ function initCharts() {
       data: {
         labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
         datasets: [
-          { label: 'Demand', data: [75, 82, 68, 91, 88], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.2)', pointBackgroundColor: '#6366f1' },
-          { label: 'Capacity', data: [100, 100, 80, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', pointBackgroundColor: '#10b981' },
-        ],
+          { label: 'Demand', data: [0, 0, 0, 0, 0], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.2)', pointBackgroundColor: '#6366f1' },
+          { label: 'Capacity', data: [0, 0, 0, 0, 0], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', pointBackgroundColor: '#10b981' },
+        ], // populated by updateCharts()
       },
       options: { responsive: true, plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } }, scales: { r: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.07)' }, pointLabels: { color: '#94a3b8', font: { size: 9 } } } } },
     });

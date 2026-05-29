@@ -36,11 +36,19 @@ deltaLat = ((destLat - busLat) * 111320.0).abs();
 deltaLng = ((destLng - busLng) * 111320.0 * CAIRO_LNG_SCALE).abs();
 distanceMeters = (deltaLat >= deltaLng) ? (deltaLat * 0.9604 + deltaLng * 0.3978) : (deltaLng * 0.9604 + deltaLat * 0.3978);
 
-// ── Check 1 KM proximity threshold ───────────────────────────────────────────
+// ── Load facilities-editable thresholds (App_Settings; fallbacks if unset) ───
+settingsMap = map();
+allSettings = zoho.creator.getRecords("centrocdx", "transportation-app", "All_App_Settings");
+for each s in allSettings { settingsMap.put(s.get("Setting_Key"), s.get("Setting_Value")); }
+proximityMeters = settingsMap.containKey("proximity_alert_meters") ? settingsMap.get("proximity_alert_meters").toLong() : 1000;
+deviationThreshold = settingsMap.containKey("deviation_threshold_meters") ? settingsMap.get("deviation_threshold_meters").toLong() : 800;
+stationaryMin = settingsMap.containKey("stationary_alert_minutes") ? settingsMap.get("stationary_alert_minutes").toLong() : 10;
+
+// ── Check proximity threshold ────────────────────────────────────────────────
 alreadyNotified = tripRecord.get("Proximity_Alert_Sent");
 if (alreadyNotified == "true") { return; } // Prevent duplicate alerts
 
-if (distanceMeters <= 1000) {
+if (distanceMeters <= proximityMeters) {
     // ── Get all confirmed bookings for this trip ──────────────────────────────
     bookings = zoho.creator.getRecords(
         "centrocdx",
@@ -149,7 +157,7 @@ if (distanceMeters <= 1000) {
             deviationMeters = (deviationLat >= deviationLng) ? (deviationLat * 0.9604 + deviationLng * 0.3978) : (deviationLng * 0.9604 + deviationLat * 0.3978);
 
             existingAnomalyFlag = tripRecord.get("Anomaly_Flagged");
-            if (deviationMeters > 800 && existingAnomalyFlag != "true") {
+            if (deviationMeters > deviationThreshold && existingAnomalyFlag != "true") {
                 anomalyAlert = "⚠️ *ROUTE DEVIATION DETECTED*\n" +
                     "Bus *" + tripRecord.get("Bus_Code") + "* is *" + (deviationMeters/1000.0).setScale(2) +
                     " km* off expected route!\n" +
@@ -165,7 +173,7 @@ if (distanceMeters <= 1000) {
         }
 
         // Check stationary for > 10 min
-        if (movementMeters < 50 && timeDeltaMin > 10) {
+        if (movementMeters < 50 && timeDeltaMin > stationaryMin) {
             existingStopFlag = tripRecord.get("Stop_Alert_Sent");
             if (existingStopFlag != "true") {
                 stopAlert = "🛑 *BUS STOPPED — POSSIBLE BREAKDOWN*\n" +

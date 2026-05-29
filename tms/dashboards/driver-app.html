@@ -310,19 +310,35 @@ window.addEventListener('offline', handleOffline);
 
 ZOHO.CREATOR.init().then(() => {
   return ZOHO.CREATOR.UTIL.getInitParams();
-}).then(params => {
+}).then(async params => {
   state.driver = params.loginUser || {};
   document.getElementById('driver-name').textContent = state.driver.name || 'Driver';
+  await loadSettings();
   loadDriverTrip();
   initMiniMap();
   loadOfflineQueue();
   refreshManifest();
-}).catch(() => {
+}).catch(async () => {
   state.driver = { name: 'Demo Driver', email: 'driver@centro.com', id: 'DRV-001' };
   document.getElementById('driver-name').textContent = 'Demo Driver';
+  await loadSettings();
   initMiniMap();
   loadOfflineQueue();
 });
+
+// App_Settings master (facilities-editable); values in APP_CONFIG are fallbacks
+async function loadSettings() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({ appName: APP_CONFIG.appName, reportName: 'All_App_Settings' });
+    if (resp.code === 3000 && resp.data) {
+      const m = {};
+      resp.data.forEach(r => { if (r.Setting_Key) m[r.Setting_Key] = r.Setting_Value; });
+      const num = (k, d) => (m[k] !== undefined && m[k] !== '' && !isNaN(parseFloat(m[k]))) ? parseFloat(m[k]) : d;
+      APP_CONFIG.gpsIntervalMs = num('ping_interval_seconds', APP_CONFIG.gpsIntervalMs / 1000) * 1000;
+      APP_CONFIG.mapCenter = [num('map_center_lat', 30.0444), num('map_center_lng', 31.2357)];
+    }
+  } catch (e) { /* keep fallbacks */ }
+}
 
 // ─────────────────────────────────────────────
 // TRIP MANAGEMENT
@@ -863,10 +879,10 @@ async function triggerSOS() {
 function initMiniMap() {
   const el = document.getElementById('map-mini');
   if (!el || state.map) return;
-  state.map = L.map('map-mini', { zoomControl: false, attributionControl: false }).setView([30.0444, 31.2357], 13);
+  state.map = L.map('map-mini', { zoomControl: false, attributionControl: false }).setView(APP_CONFIG.mapCenter || [30.0444, 31.2357], 13);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(state.map);
   const busIcon = L.divIcon({ html: `<div style="width:28px;height:28px;background:#6366f1;border-radius:50%;border:3px solid white;"></div>`, iconSize:[28,28], iconAnchor:[14,14] });
-  state.busMarker = L.marker([30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
+  state.busMarker = L.marker(APP_CONFIG.mapCenter || [30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
 }
 
 // ─────────────────────────────────────────────
