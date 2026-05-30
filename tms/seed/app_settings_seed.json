@@ -1,0 +1,20 @@
+{
+  "_README": "MCP-ready seed payload for the App_Settings form. After Phase 0 lands, I run a single ZohoCreator_addRecords call against form_link_name=App_Settings using the `data` array below. skip_workflow is included for hygiene — App_Settings has no On Add workflow, but this keeps the pattern consistent with the skill.",
+  "form_link_name": "App_Settings",
+  "data": [
+    { "Setting_Key": "proximity_alert_meters", "Setting_Value": "1000", "Category": "Geofencing", "Description": "Distance (m) at which passengers get the 'bus arriving' alert." },
+    { "Setting_Key": "deviation_threshold_meters", "Setting_Value": "800", "Category": "Geofencing", "Description": "Off-route distance (m) that flags a route deviation." },
+    { "Setting_Key": "stationary_alert_minutes", "Setting_Value": "10", "Category": "Geofencing", "Description": "Minutes the bus must be stopped before a breakdown alert fires." },
+    { "Setting_Key": "ghost_bus_trigger_count", "Setting_Value": "10", "Category": "Overflow", "Description": "Standby queue size that triggers a ghost-bus request." },
+    { "Setting_Key": "early_warning_count", "Setting_Value": "5", "Category": "Overflow", "Description": "Standby size for the early-warning Cliq ping (before ghost bus)." },
+    { "Setting_Key": "co2_per_km", "Setting_Value": "0.21", "Category": "Eco", "Description": "kg CO2 saved per km vs a single-occupant car." },
+    { "Setting_Key": "avg_route_length_km", "Setting_Value": "25", "Category": "Eco", "Description": "Default route distance (km) when a Route has no Distance_Km set." },
+    { "Setting_Key": "default_total_seats", "Setting_Value": "35", "Category": "Tracking", "Description": "Fallback bus capacity when a trip/bus does not specify one." },
+    { "Setting_Key": "on_time_grace_minutes", "Setting_Value": "5", "Category": "AI", "Description": "Lateness grace (min) before a trip counts as late in the driver scorecard." },
+    { "Setting_Key": "ping_interval_seconds", "Setting_Value": "10", "Category": "Tracking", "Description": "Driver GPS ping interval (seconds)." },
+    { "Setting_Key": "mgmt_refresh_seconds", "Setting_Value": "15", "Category": "Tracking", "Description": "Management dashboard auto-refresh interval (seconds)." },
+    { "Setting_Key": "map_center_lat", "Setting_Value": "30.0444", "Category": "Map", "Description": "Default map center latitude (Cairo)." },
+    { "Setting_Key": "map_center_lng", "Setting_Value": "31.2357", "Category": "Map", "Description": "Default map center longitude (Cairo)." }
+  ],
+  "skip_workflow": ["form_workflow"]
+}

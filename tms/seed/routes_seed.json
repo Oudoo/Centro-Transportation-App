@@ -1,0 +1,13 @@
+{
+  "_README": "MCP-ready seed payload for the Routes form. Includes the 3 Dropoff values that already exist in the legacy Bus_Schedule dropdown (so the new master matches current state on day one) plus 3 realistic Cairo examples facilities can edit/extend/delete. Replace before importing if you already have the real route list.",
+  "form_link_name": "Routes",
+  "data": [
+    { "Route_Name": "Dropoff 1", "Origin_Zone": "HQ", "Dropoff_Point": "Dropoff 1", "Distance_Km": "25", "Active": "Yes" },
+    { "Route_Name": "Dropoff 2", "Origin_Zone": "HQ", "Dropoff_Point": "Dropoff 2", "Distance_Km": "25", "Active": "Yes" },
+    { "Route_Name": "Dropoff 3", "Origin_Zone": "HQ", "Dropoff_Point": "Dropoff 3", "Distance_Km": "25", "Active": "Yes" },
+    { "Route_Name": "Maadi → HQ", "Origin_Zone": "Maadi", "Dropoff_Point": "HQ", "Distance_Km": "18", "Dest_Lat": "30.0626", "Dest_Lng": "31.2497", "Active": "Yes" },
+    { "Route_Name": "Nasr City → HQ", "Origin_Zone": "Nasr City", "Dropoff_Point": "HQ", "Distance_Km": "22", "Dest_Lat": "30.0561", "Dest_Lng": "31.3260", "Active": "Yes" },
+    { "Route_Name": "Heliopolis → HQ", "Origin_Zone": "Heliopolis", "Dropoff_Point": "HQ", "Distance_Km": "20", "Dest_Lat": "30.0862", "Dest_Lng": "31.3297", "Active": "Yes" }
+  ],
+  "skip_workflow": ["form_workflow"]
+}
