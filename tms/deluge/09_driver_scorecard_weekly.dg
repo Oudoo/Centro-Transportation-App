@@ -19,7 +19,7 @@
 
 // On-time grace is facilities-editable via App_Settings (fallback 5 min)
 settingsMap = map();
-allSettings = zoho.creator.getRecords("centrocdx", "transportation-app", "All_App_Settings");
+allSettings = zoho.creator.getRecords("youfioudo", "centro-transportaion-app", "All_App_Settings");
 for each s in allSettings { settingsMap.put(s.get("Setting_Key"), s.get("Setting_Value")); }
 ON_TIME_GRACE_MIN = settingsMap.containKey("on_time_grace_minutes") ? settingsMap.get("on_time_grace_minutes").toLong() : 5;
 
@@ -27,8 +27,8 @@ weekStart = zoho.today.addDay(-7).toString("yyyy-MM-dd");
 weekEnd = zoho.today.toString("yyyy-MM-dd");
 
 trips = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Active_Timings",
     "Departure_Time >= " + '"' + weekStart + '"'
 );
@@ -141,7 +141,7 @@ for each row in ranked {
     perfData.put("Avg_Delay_Min", row.get("avg_delay"));
     perfData.put("Score", row.get("score"));
     perfData.put("Rank", rankNum);
-    zoho.creator.createRecord("centrocdx", "transportation-app", "Driver_Performance", perfData);
+    zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "Driver_Performance", perfData);
 
     medal = (rankNum == 1 ? "🥇" : rankNum == 2 ? "🥈" : rankNum == 3 ? "🥉" : "  ");
     leaderboard = leaderboard + medal + " *" + row.get("name") + "* — " +

@@ -8,8 +8,8 @@
 // ── Fetch the selected trip record ──────────────────────────────────────────
 tripId = input.Trip_ID.toLong();
 tripRecord = zoho.creator.getRecordById(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "Active_Timings",
     tripId
 );
@@ -37,7 +37,7 @@ if (currentSeats <= 0) {
     standbyData.put("Trip_ID", input.Trip_ID);
     standbyData.put("Status", "Waiting");
     standbyData.put("Request_Time", zoho.currenttime);
-    zoho.creator.createRecord("centrocdx", "transportation-app", "Overflow_Standby", standbyData);
+    zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "Overflow_Standby", standbyData);
 
     // Ghost-bus trigger + standby threshold alerts are handled by the
     // Overflow_Standby On-Add workflow (06_overflow_standby.dg) to avoid double-firing.
@@ -55,8 +55,8 @@ if (newSeatCount == 0) {
 }
 
 zoho.creator.updateRecord(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Active_Timings",
     tripId,
     updateMap
@@ -83,7 +83,7 @@ bookingUpdate.put("Booking_Time", zoho.currenttime);
 
 // Calculate CO2 saved — factor + default distance are facilities-editable (App_Settings)
 settingsMap = map();
-allSettings = zoho.creator.getRecords("centrocdx", "transportation-app", "All_App_Settings");
+allSettings = zoho.creator.getRecords("youfioudo", "centro-transportaion-app", "All_App_Settings");
 for each s in allSettings { settingsMap.put(s.get("Setting_Key"), s.get("Setting_Value")); }
 co2Factor = settingsMap.containKey("co2_per_km") ? settingsMap.get("co2_per_km").toDecimal() : 0.21;
 defaultKm = settingsMap.containKey("avg_route_length_km") ? settingsMap.get("avg_route_length_km").toDecimal() : 25;
@@ -97,8 +97,8 @@ bookingUpdate.put("CO2_Saved", co2Saved.setScale(2));
 
 // Update booking (current record being submitted)
 zoho.creator.updateRecord(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_TMS_Bookings",
     input.ID,
     bookingUpdate
@@ -106,8 +106,8 @@ zoho.creator.updateRecord(
 
 // ── Update Employee CO2 + Eco Points ─────────────────────────────────────────
 empRecords = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Employee_Registrations",
     "Email == " + '"' + empEmail + '"'
 );
@@ -130,8 +130,8 @@ if (empRecords.size() > 0) {
     empUpdate.put("Total_Trips", currentTrips + 1);
 
     zoho.creator.updateRecord(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Employee_Registrations",
         empRecord.get("ID"),
         empUpdate
@@ -143,8 +143,8 @@ pickupZone = tripRecord.get("Origin_Zone");
 dropoffZone = tripRecord.get("Route");
 if (!pickupZone.isNull() && !dropoffZone.isNull()) {
     existingHeatmap = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Heatmap_Data",
         "Pickup_Zone == " + '"' + pickupZone + '"' + " && Dropoff_Zone == " + '"' + dropoffZone + '"'
     );
@@ -156,14 +156,14 @@ if (!pickupZone.isNull() && !dropoffZone.isNull()) {
         heatUpdate = map();
         heatUpdate.put("Demand_Score", newScore);
         heatUpdate.put("Last_Updated", zoho.currenttime);
-        zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Heatmap_Data", heatRecord.get("ID"), heatUpdate);
+        zoho.creator.updateRecord("youfioudo", "centro-transportaion-app", "All_Heatmap_Data", heatRecord.get("ID"), heatUpdate);
     } else {
         heatData = map();
         heatData.put("Pickup_Zone", pickupZone);
         heatData.put("Dropoff_Zone", dropoffZone);
         heatData.put("Demand_Score", 1);
         heatData.put("Timestamp", zoho.currenttime);
-        zoho.creator.createRecord("centrocdx", "transportation-app", "Heatmap_Data", heatData);
+        zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "Heatmap_Data", heatData);
     }
 }
 

@@ -15,8 +15,8 @@
 tomorrow = zoho.today.addDay(1).toString("yyyy-MM-dd");
 
 tomorrowTrips = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Active_Timings",
     "Status != \"Cancelled\" && Departure_Time >= " + '"' + tomorrow + '"'
 );
@@ -31,8 +31,8 @@ for each trip in tomorrowTrips {
     if (route.isNull()) { route = trip.get("Dropoff_Point"); }
 
     bookings = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_TMS_Bookings",
         "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Confirmed\""
     );
@@ -125,7 +125,7 @@ for each trip in tomorrowTrips {
     tripUpdate = map();
     tripUpdate.put("Optimized_Sequence", seqText);
     tripUpdate.put("Optimized_At", zoho.currenttime);
-    zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Active_Timings", tripId, tripUpdate);
+    zoho.creator.updateRecord("youfioudo", "centro-transportaion-app", "All_Active_Timings", tripId, tripUpdate);
 
     // ── Log a recommendation for the management panel ─────────────────────────
     recData = map();
@@ -140,7 +140,7 @@ for each trip in tomorrowTrips {
     recData.put("Target_Date", tomorrow);
     recData.put("Generated_At", zoho.currenttime);
     recData.put("Analysis_Type", "AI_Route_Optimization");
-    zoho.creator.createRecord("centrocdx", "transportation-app", "AI_Fleet_Recommendations", recData);
+    zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "AI_Fleet_Recommendations", recData);
 
     optimizedCount = optimizedCount + 1;
 }

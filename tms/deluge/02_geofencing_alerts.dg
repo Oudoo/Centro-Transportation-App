@@ -12,8 +12,8 @@ currentTs = input.Timestamp;
 
 // ── Fetch trip details (destination coords) ───────────────────────────────────
 tripRecords = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Active_Timings",
     "ID == " + '"' + tripId + '"'
 );
@@ -38,7 +38,7 @@ distanceMeters = (deltaLat >= deltaLng) ? (deltaLat * 0.9604 + deltaLng * 0.3978
 
 // ── Load facilities-editable thresholds (App_Settings; fallbacks if unset) ───
 settingsMap = map();
-allSettings = zoho.creator.getRecords("centrocdx", "transportation-app", "All_App_Settings");
+allSettings = zoho.creator.getRecords("youfioudo", "centro-transportaion-app", "All_App_Settings");
 for each s in allSettings { settingsMap.put(s.get("Setting_Key"), s.get("Setting_Value")); }
 proximityMeters = settingsMap.containKey("proximity_alert_meters") ? settingsMap.get("proximity_alert_meters").toLong() : 1000;
 deviationThreshold = settingsMap.containKey("deviation_threshold_meters") ? settingsMap.get("deviation_threshold_meters").toLong() : 800;
@@ -51,8 +51,8 @@ if (alreadyNotified == "true") { return; } // Prevent duplicate alerts
 if (distanceMeters <= proximityMeters) {
     // ── Get all confirmed bookings for this trip ──────────────────────────────
     bookings = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_TMS_Bookings",
         "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Confirmed\""
     );
@@ -83,8 +83,8 @@ if (distanceMeters <= proximityMeters) {
         notifUpdate.put("Proximity_Alert_Sent", "true");
         notifUpdate.put("Alert_Time", zoho.currenttime);
         zoho.creator.updateRecord(
-            "centrocdx",
-            "transportation-app",
+            "youfioudo",
+            "centro-transportaion-app",
             "All_TMS_Bookings",
             booking.get("ID"),
             notifUpdate
@@ -97,8 +97,8 @@ if (distanceMeters <= proximityMeters) {
     tripAlertUpdate.put("Last_Known_Lat", busLat.toString());
     tripAlertUpdate.put("Last_Known_Lng", busLng.toString());
     zoho.creator.updateRecord(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Active_Timings",
         tripId,
         tripAlertUpdate
@@ -114,8 +114,8 @@ if (distanceMeters <= proximityMeters) {
     // Find the most recent prior log for this trip (excludes the current record).
     // Replaces the invalid getRecords sort/max 5th-arg; selects by max Timestamp.
     priorLogs = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Live_Tracking_Logs",
         "Trip_ID == " + '"' + tripId + '"'
     );
@@ -168,7 +168,7 @@ if (distanceMeters <= proximityMeters) {
                 anomalyUpdate = map();
                 anomalyUpdate.put("Anomaly_Flagged", "true");
                 anomalyUpdate.put("Anomaly_Type", "ROUTE_DEVIATION");
-                zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Active_Timings", tripId, anomalyUpdate);
+                zoho.creator.updateRecord("youfioudo", "centro-transportaion-app", "All_Active_Timings", tripId, anomalyUpdate);
             }
         }
 
@@ -186,7 +186,7 @@ if (distanceMeters <= proximityMeters) {
                 stopUpdate = map();
                 stopUpdate.put("Stop_Alert_Sent", "true");
                 stopUpdate.put("Anomaly_Type", "STATIONARY");
-                zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Active_Timings", tripId, stopUpdate);
+                zoho.creator.updateRecord("youfioudo", "centro-transportaion-app", "All_Active_Timings", tripId, stopUpdate);
             }
         }
     }
@@ -196,5 +196,5 @@ if (distanceMeters <= proximityMeters) {
     posUpdate.put("Last_Known_Lat", busLat.toString());
     posUpdate.put("Last_Known_Lng", busLng.toString());
     posUpdate.put("Last_Ping_Time", zoho.currenttime);
-    zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Active_Timings", tripId, posUpdate);
+    zoho.creator.updateRecord("youfioudo", "centro-transportaion-app", "All_Active_Timings", tripId, posUpdate);
 }

@@ -7,8 +7,8 @@
 // ── Count current standby for this trip ──────────────────────────────────────
 tripId = input.Trip_ID;
 standbyList = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Overflow_Standby",
     "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Waiting\""
 );
@@ -17,8 +17,8 @@ standbyCount = standbyList.size();
 
 // ── Fetch trip info ───────────────────────────────────────────────────────────
 tripRecords = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Active_Timings",
     "ID == " + '"' + tripId + '"'
 );
@@ -42,7 +42,7 @@ zoho.cliq.postToChannel("transportation-alerts", standbyMsg);
 
 // ── Load facilities-editable thresholds (App_Settings; fallbacks if unset) ───
 settingsMap = map();
-allSettings = zoho.creator.getRecords("centrocdx", "transportation-app", "All_App_Settings");
+allSettings = zoho.creator.getRecords("youfioudo", "centro-transportaion-app", "All_App_Settings");
 for each s in allSettings { settingsMap.put(s.get("Setting_Key"), s.get("Setting_Value")); }
 ghostTrigger = settingsMap.containKey("ghost_bus_trigger_count") ? settingsMap.get("ghost_bus_trigger_count").toLong() : 10;
 earlyWarn = settingsMap.containKey("early_warning_count") ? settingsMap.get("early_warning_count").toLong() : 5;
@@ -52,8 +52,8 @@ if (standbyCount > ghostTrigger) {
 
     // Check if we already sent a ghost bus alert for this trip today
     existingAlerts = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Incident_Reports",
         "Trip_ID == " + '"' + tripId + '"' + " && Incident_Type == \"GHOST_BUS_REQUEST\" && Status == \"Open\""
     );
@@ -62,7 +62,7 @@ if (standbyCount > ghostTrigger) {
         // Already alerted — just update the standby count
         alertUpdate = map();
         alertUpdate.put("Description", standbyCount + " passengers on standby for " + route + " (Bus " + busCode + ")");
-        zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Incident_Reports", existingAlerts.get(0).get("ID"), alertUpdate);
+        zoho.creator.updateRecord("youfioudo", "centro-transportaion-app", "All_Incident_Reports", existingAlerts.get(0).get("ID"), alertUpdate);
         return;
     }
 
@@ -75,7 +75,7 @@ if (standbyCount > ghostTrigger) {
     incidentData.put("Description", "⚠️ GHOST BUS REQUIRED: " + standbyCount + " passengers on standby for " + route + " departing " + departureTime + ". Immediate deployment recommended.");
     incidentData.put("Timestamp", zoho.currenttime);
     incidentData.put("Driver_Email", tripRecord.get("Driver_Email"));
-    zoho.creator.createRecord("centrocdx", "transportation-app", "Incident_Reports", incidentData);
+    zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "Incident_Reports", incidentData);
 
     // ── Fire webhook to Management Dashboard ─────────────────────────────────
     ghostBusWebhookUrl = zoho.secrets.fetch("GHOST_BUS_WEBHOOK_URL");

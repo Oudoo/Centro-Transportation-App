@@ -4,7 +4,7 @@
 ---
 
 ## Current App State (Re-audited via MCP — 2026)
-- **App Link**: `centrocdx/transportation-app` (production environment)
+- **App Link**: `youfioudo/centro-transportaion-app` (production environment)
 - **Existing Forms** (KEEP — do not delete):
   - `Employee_Registration` — employee master. **Keep + enhance.** Verified fields: `Name` (composite First/Last), `Email`, `Phone_Number`, `HITS_ID`, `Campaign` (dropdown). The booking workflow looks employees up by **`Email`** (not `Employee_Email`).
   - `Bus_Schedule` — legacy schedule: `Bus_Code`, `Dropoff_Point` (dropdown), `Available_From`, `Available_To`, `Number_of_Seats`. Keep as employee-app fallback; retire after `Active_Timings` is live.
@@ -331,7 +331,7 @@ Add to existing `Employee_Registration` form:
 - **Type**: API-enabled Stateless Custom Function
 - **Name**: `syncOfflineScans`
 - **Script**: `tms/deluge/03_offline_qr_sync.dg`
-- **Endpoint**: `/api/v2/centrocdx/transportation-app/function/syncOfflineScans`
+- **Endpoint**: `/api/v2/youfioudo/centro-transportaion-app/function/syncOfflineScans`
 
 ### Scheduled Function 1: Hourly Demand Analysis
 - **Type**: Schedule
@@ -482,7 +482,7 @@ Add to the `<head>` of employee-app.html and driver-app.html:
 ```javascript
 // Get records
 await ZOHO.CREATOR.API.getAllRecords({
-  appName: 'transportation-app',
+  appName: 'centro-transportaion-app',
   reportName: 'All_Active_Timings',
   criteria: 'Status == "Active"',
   max_records: 50
@@ -490,14 +490,14 @@ await ZOHO.CREATOR.API.getAllRecords({
 
 // Add record
 await ZOHO.CREATOR.API.addRecord({
-  appName: 'transportation-app',
+  appName: 'centro-transportaion-app',
   formName: 'Bookings',
   data: { Employee_Email: '...', Trip_ID: '...', QR_Hash: '...' }
 });
 
 // Update record
 await ZOHO.CREATOR.API.updateRecord({
-  appName: 'transportation-app',
+  appName: 'centro-transportaion-app',
   reportName: 'All_TMS_Bookings',
   id: recordId,
   data: { Status: 'Boarded' }
@@ -506,7 +506,7 @@ await ZOHO.CREATOR.API.updateRecord({
 
 ### Offline QR Sync API (POST)
 ```
-POST /api/v2/centrocdx/transportation-app/function/syncOfflineScans
+POST /api/v2/youfioudo/centro-transportaion-app/function/syncOfflineScans
 Authorization: Zoho-oauthtoken <token>
 Content-Type: application/json
 

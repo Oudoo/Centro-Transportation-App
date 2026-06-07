@@ -11,24 +11,24 @@ tomorrowDow = zoho.today.addDay(1).dayOfWeek(); // 1=Mon, 7=Sun
 
 // Historical bookings
 historicalBookings = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_TMS_Bookings",
     "Booking_Time >= " + '"' + thirtyDaysAgo + '"'
 );
 
 // Historical heatmap
 heatmapData = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Heatmap_Data",
     "Timestamp >= " + '"' + thirtyDaysAgo + '"'
 );
 
 // Available buses
 buses = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Buses",
     "Status != \"Maintenance\""
 );
@@ -165,7 +165,7 @@ for each assignment in assignments {
     recData.put("Generated_At", zoho.currenttime);
     recData.put("Analysis_Type", "AI_Nightly");
 
-    zoho.creator.createRecord("centrocdx", "transportation-app", "AI_Fleet_Recommendations", recData);
+    zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "AI_Fleet_Recommendations", recData);
     savedRecs = savedRecs + 1;
 }
 

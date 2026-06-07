@@ -18,16 +18,16 @@ dayKey = (tomorrowDow == 1 ? "mon" : tomorrowDow == 2 ? "tue" : tomorrowDow == 3
 
 // ── Active templates that include tomorrow's weekday ──────────────────────────
 templates = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Commute_Templates",
     "Active == \"Yes\""
 );
 
 // ── Tomorrow's active trips, indexed by route ─────────────────────────────────
 tomorrowTrips = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Active_Timings",
     "Status != \"Cancelled\" && Departure_Time >= " + '"' + tomorrow + '"'
 );
@@ -60,8 +60,8 @@ for each tmpl in templates {
 
     // Skip if this employee already has a booking on this trip
     existing = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_TMS_Bookings",
         "Trip_ID == " + '"' + tripId + '"' + " && Employee_Email == " + '"' + empEmail + '"' + " && Status != \"Cancelled\""
     );
@@ -73,13 +73,13 @@ for each tmpl in templates {
     bookingData.put("Employee_Email", empEmail);
     bookingData.put("Trip_ID", tripId);
     bookingData.put("Source", "Recurring_Auto");
-    zoho.creator.createRecord("centrocdx", "transportation-app", "Bookings", bookingData);
+    zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "Bookings", bookingData);
     bookedCount = bookedCount + 1;
 
     // Stamp the template
     tmplUpdate = map();
     tmplUpdate.put("Last_Auto_Booked", tomorrow);
-    zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Commute_Templates", tmpl.get("ID"), tmplUpdate);
+    zoho.creator.updateRecord("youfioudo", "centro-transportaion-app", "All_Commute_Templates", tmpl.get("ID"), tmplUpdate);
 }
 
 // ── Summary to ops channel ────────────────────────────────────────────────────

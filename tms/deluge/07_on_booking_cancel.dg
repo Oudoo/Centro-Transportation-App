@@ -18,8 +18,8 @@ if (tripId.isNull() || tripId.toString().isEmpty()) { return; }
 
 // ── Fetch the trip ────────────────────────────────────────────────────────────
 tripRecord = zoho.creator.getRecordById(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "Active_Timings",
     tripId.toLong()
 );
@@ -37,8 +37,8 @@ busCode = tripRecord.get("Bus_Code");
 
 // ── Find the first waiting standby for this trip ─────────────────────────────
 standbyList = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Overflow_Standby",
     "Trip_ID == " + '"' + tripId + '"' + " && Status == \"Waiting\""
 );
@@ -53,8 +53,8 @@ if (!standbyList.isEmpty()) {
     standbyUpgrade.put("Status", "Confirmed");
     standbyUpgrade.put("Upgraded_At", zoho.currenttime);
     zoho.creator.updateRecord(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Overflow_Standby",
         firstStandby.get("ID"),
         standbyUpgrade
@@ -76,8 +76,8 @@ if (!standbyList.isEmpty()) {
     tripUpdate.put("Available_Seats", newSeats);
     if (tripRecord.get("Status") == "Full") { tripUpdate.put("Status", "Active"); }
     zoho.creator.updateRecord(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Active_Timings",
         tripId.toLong(),
         tripUpdate
@@ -89,8 +89,8 @@ releaseUpdate = map();
 releaseUpdate.put("Seat_Released", true);
 releaseUpdate.put("Cancelled_At", zoho.currenttime);
 zoho.creator.updateRecord(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_TMS_Bookings",
     input.ID,
     releaseUpdate
