@@ -1,0 +1,37 @@
+{
+  "newForms": [
+    "App_Settings",
+    "Routes",
+    "Buses",
+    "Active_Timings",
+    "Bookings",
+    "Live_Tracking_Logs",
+    "Heatmap_Data",
+    "Overflow_Standby",
+    "AI_Fleet_Recommendations",
+    "Incident_Reports",
+    "Commute_Templates",
+    "Driver_Performance"
+  ],
+  "existingFormsToExtend": [
+    {
+      "form": "Employee_Registration",
+      "addFields": ["CO2_Total_Saved", "Eco_Points", "Total_Trips", "Department", "Pickup_Zone"]
+    }
+  ],
+  "newReports": [
+    "All_App_Settings",
+    "All_Routes",
+    "All_Buses",
+    "All_Active_Timings",
+    "All_TMS_Bookings",
+    "All_Live_Tracking_Logs",
+    "All_Heatmap_Data",
+    "All_Overflow_Standby",
+    "All_AI_Fleet_Recommendations",
+    "All_Incident_Reports",
+    "All_Commute_Templates",
+    "All_Driver_Performances",
+    "Eco_Leaderboard"
+  ]
+}

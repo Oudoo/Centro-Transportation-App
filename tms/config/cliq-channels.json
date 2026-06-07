@@ -1,0 +1,19 @@
+{
+  "channels": [
+    {
+      "name": "transportation-ops",
+      "purpose": "Management and dispatcher alerts — fleet anomalies, ghost bus requests, AI briefings",
+      "members": ["management", "dispatchers"]
+    },
+    {
+      "name": "transportation-alerts",
+      "purpose": "Employee notifications — proximity alerts, booking confirmations, standby updates",
+      "members": ["all-employees"]
+    }
+  ],
+  "webhooks": {
+    "ghostBus": "REPLACE_WITH_ZOHO_FLOW_WEBHOOK_URL",
+    "aiProxy": "REPLACE_WITH_AI_PROXY_WEBHOOK_URL",
+    "dispatcherAlert": "REPLACE_WITH_DISPATCHER_WEBHOOK_URL"
+  }
+}

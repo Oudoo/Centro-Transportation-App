@@ -1,0 +1,54 @@
+{
+  "app": {
+    "accountOwner": "youfioudo",
+    "appLinkName": "centro-transportaion-app",
+    "timezone": "Africa/Cairo",
+    "language": "en",
+    "rtlSupport": true
+  },
+  "forms": {
+    "buses": "Buses",
+    "trips": "Active_Timings",
+    "bookings": "Bookings",
+    "trackingLogs": "Live_Tracking_Logs",
+    "heatmapData": "Heatmap_Data",
+    "overflowStandby": "Overflow_Standby",
+    "aiRecommendations": "AI_Fleet_Recommendations",
+    "incidents": "Incident_Reports"
+  },
+  "reports": {
+    "trips": "All_Active_Timings",
+    "bookings": "All_TMS_Bookings",
+    "buses": "All_Buses",
+    "trackingLogs": "All_Live_Tracking_Logs",
+    "heatmapData": "All_Heatmap_Data",
+    "standby": "All_Overflow_Standby",
+    "aiRecs": "All_AI_Fleet_Recommendations",
+    "incidents": "All_Incident_Reports",
+    "leaderboard": "Eco_Leaderboard"
+  },
+  "ai": {
+    "provider": "gemini",
+    "model": "gemini-2.0-flash",
+    "proxyViaZohoFlow": true,
+    "co2PerKm": 0.21,
+    "avgRouteLengthKm": 25
+  },
+  "geofencing": {
+    "proximityAlertMeters": 1000,
+    "deviationThresholdMeters": 800,
+    "stationaryAlertMinutes": 10
+  },
+  "overflow": {
+    "ghostBusTriggerCount": 10,
+    "earlyWarningCount": 5
+  },
+  "tracking": {
+    "pingIntervalSeconds": 10,
+    "offlineCacheLimit": 200
+  },
+  "schedules": {
+    "demandAnalysisHourly": "0 * * * *",
+    "aiFleetNightly": "0 2 * * *"
+  }
+}

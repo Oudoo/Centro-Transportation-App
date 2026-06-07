@@ -1,7 +1,7 @@
 /**
  * CUSTOM FUNCTION: Offline QR Boarding Sync API
  * Type: API-enabled Custom Function (Stateless)
- * URL: https://creator.zoho.com/api/v2/centrocdx/transportation-app/form/Bookings/record/custom/syncOfflineScans
+ * URL: https://creator.zoho.com/api/v2/youfioudo/centro-transportaion-app/form/Bookings/record/custom/syncOfflineScans
  * Method: POST
  * Body: { "scans": [{"hash":"CTMS-XXXX","emp":"email","trip":"trip_id","scanned_at":"ISO","offline":true}] }
  *
@@ -47,8 +47,8 @@ for each scan in scanList {
 
     // ── Find booking by QR hash ───────────────────────────────────────────────
     bookings = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_TMS_Bookings",
         "QR_Hash == " + '"' + qrHash + '"'
     );
@@ -56,8 +56,8 @@ for each scan in scanList {
     if (bookings.isEmpty()) {
         // Try legacy form
         bookings = zoho.creator.getRecords(
-            "centrocdx",
-            "transportation-app",
+            "youfioudo",
+            "centro-transportaion-app",
             "All_Bookings",
             "QR_Hash == " + '"' + qrHash + '"'
         );
@@ -113,8 +113,8 @@ for each scan in scanList {
     updateData.put("Sync_Time", zoho.currenttime);
 
     updateResp = zoho.creator.updateRecord(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_TMS_Bookings",
         bookingId,
         updateData

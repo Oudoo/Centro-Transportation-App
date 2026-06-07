@@ -288,6 +288,27 @@
   </div>
 </div>
 
+<!-- Schedule Screen (F1 — Smart Recurring Commute) -->
+<div id="screen-schedule" class="screen">
+  <h2 style="font-size:1rem;font-weight:700;color:white;margin-bottom:6px;" data-en="My Commute Schedule" data-ar="جدول تنقلاتي">My Commute Schedule</h2>
+  <p style="font-size:0.8rem;color:var(--muted);margin-bottom:16px;" data-en="Set your weekly routine and we'll auto-book your seat every night." data-ar="حدد روتينك الأسبوعي وسنحجز مقعدك تلقائيًا كل ليلة.">Set your weekly routine and we'll auto-book your seat every night.</p>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div style="font-size:0.85rem;font-weight:600;color:white;margin-bottom:10px;" data-en="New recurring trip" data-ar="رحلة متكررة جديدة">New recurring trip</div>
+    <label style="font-size:0.72rem;color:var(--muted);">Route</label>
+    <select id="sched-route" style="width:100%;padding:10px;margin:4px 0 12px;border-radius:8px;background:#0f172a;color:white;border:1px solid rgba(99,102,241,0.4);"></select>
+    <label style="font-size:0.72rem;color:var(--muted);">Active days</label>
+    <div id="sched-days" style="display:flex;gap:6px;margin:6px 0 14px;flex-wrap:wrap;"></div>
+    <button class="btn-primary" onclick="saveCommuteTemplate()" id="sched-save-btn" data-en="Save schedule" data-ar="حفظ الجدول">Save schedule</button>
+  </div>
+
+  <div style="font-size:0.85rem;font-weight:700;color:white;margin-bottom:10px;" data-en="Your routines" data-ar="روتيناتك">Your routines</div>
+  <div id="schedule-list">
+    <div class="skeleton" style="height:60px;margin-bottom:8px;"></div>
+    <div class="skeleton" style="height:60px;"></div>
+  </div>
+</div>
+
 <!-- AI Chat Screen -->
 <div id="screen-ai" class="screen" style="display:flex;flex-direction:column;height:calc(100vh - 140px);">
   <div style="margin-bottom:12px;">
@@ -327,6 +348,10 @@
     <svg fill="currentColor" viewBox="0 0 24 24"><path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zm-14 4H3v8h8v-8H5zm-2 6H5v-4h4v4zm10 2h2v2h-2zm-4-4h2v2h-2zm2 2h2v2h-2zm0-4h2v2h-2zm2 2h2v2h-2zm2-2h2v2h-2zm0 4h2v2h-2zm-4 2h2v2h-2z"/></svg>
     <span data-en="Pass" data-ar="تذكرة">Pass</span>
   </button>
+  <button class="tab-btn" onclick="showScreen('schedule')" id="tab-schedule">
+    <svg fill="currentColor" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V9h14v10zm0-12H5V5h14v2zm-7 5h5v5h-5z"/></svg>
+    <span data-en="Schedule" data-ar="جدول">Schedule</span>
+  </button>
   <button class="tab-btn" onclick="showScreen('eco')" id="tab-eco">
     <svg fill="currentColor" viewBox="0 0 24 24"><path d="M17 8C8 10 5.9 16.17 3.82 21L5.71 22l1-2.3A4.49 4.49 0 0 0 8 20C19 20 22 3 22 3c-1 2-8 2-8 2h-1l4 3z"/></svg>
     <span data-en="Eco" data-ar="بيئة">Eco</span>
@@ -347,6 +372,18 @@
     <h3 style="font-size:1.1rem;font-weight:700;color:white;margin-bottom:4px;" id="modal-title">Confirm Booking</h3>
     <p style="font-size:0.85rem;color:var(--muted);margin-bottom:20px;" id="modal-subtitle">Review trip details before confirming</p>
     <div id="modal-details" class="card" style="margin-bottom:16px;"></div>
+    <div id="seat-map-section" style="display:none;margin-bottom:16px;">
+      <div style="font-size:0.78rem;color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between;">
+        <span data-en="Pick your seat" data-ar="اختر مقعدك">Pick your seat</span>
+        <span id="seat-selected-label" style="color:var(--primary);font-weight:600;"></span>
+      </div>
+      <div style="display:flex;justify-content:center;margin-bottom:8px;font-size:0.7rem;color:var(--muted);gap:14px;">
+        <span>🟪 <span data-en="Available" data-ar="متاح">Available</span></span>
+        <span>⬛ <span data-en="Taken" data-ar="محجوز">Taken</span></span>
+        <span>🟩 <span data-en="Yours" data-ar="مقعدك">Yours</span></span>
+      </div>
+      <div id="seat-map" style="display:grid;gap:6px;justify-content:center;"></div>
+    </div>
     <button class="btn-primary" onclick="confirmBooking()" id="confirm-btn">Confirm & Book</button>
     <button onclick="closeBookingModal()" style="width:100%;padding:12px;background:none;border:none;color:var(--muted);cursor:pointer;margin-top:8px;font-size:0.9rem;">Cancel</button>
   </div>
@@ -357,8 +394,8 @@
 // CONFIGURATION
 // ─────────────────────────────────────────────
 const APP_CONFIG = {
-  accountOwner: 'centrocdx',
-  appName: 'transportation-app',
+  accountOwner: 'youfioudo',
+  appName: 'centro-transportaion-app',
   forms: {
     trips: 'Active_Timings',
     bookings: 'Bookings',
@@ -373,8 +410,9 @@ const APP_CONFIG = {
     leaderboard: 'Eco_Leaderboard',
     trackingLogs: 'All_Live_Tracking_Logs',
   },
-  aiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
-  aiKey: 'YOUR_GEMINI_API_KEY', // Replace with your key or use Zoho Flow proxy
+  // Gemini is called server-side via a Zoho Flow proxy so the API key never ships to the client.
+  // The proxy accepts { prompt } and returns either { text } or the raw Gemini response.
+  aiProxyUrl: 'REPLACE_WITH_AI_PROXY_WEBHOOK_URL',
   co2PerKm: 0.21, // kg CO2 per km average car emission offset
   avgRouteKm: 25,  // average route distance in km (Cairo metro area)
 };
@@ -402,21 +440,58 @@ let state = {
 // ─────────────────────────────────────────────
 ZOHO.CREATOR.init().then(() => {
   return ZOHO.CREATOR.UTIL.getInitParams();
-}).then(params => {
+}).then(async params => {
   state.currentUser = params.loginUser || { email: '', name: 'User', id: '' };
   initUI();
+  await loadSettings();   // facilities-editable config (App_Settings) before anything renders
+  await loadRoutes();     // facilities-editable route list (Routes)
   loadUserProfile();
   loadTrips();
   loadMyBookings();
   initMap();
-}).catch(() => {
+}).catch(async () => {
   // Fallback for development/preview mode
   state.currentUser = { email: 'demo@centro.com', name: 'Demo User', id: 'demo-001', hits_id: 'EMP-001' };
   initUI();
+  await loadSettings();
+  await loadRoutes();
   loadTrips();
   loadMyBookings();
   initMap();
 });
+
+// ─────────────────────────────────────────────
+// DYNAMIC CONFIG — App_Settings + Routes master forms
+// (facilities edit these in Creator; hardcoded values below are fallbacks only)
+// ─────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName, reportName: 'All_App_Settings',
+    });
+    if (resp.code === 3000 && resp.data) applySettings(resp.data);
+  } catch (e) { /* keep hardcoded fallbacks */ }
+}
+
+function applySettings(rows) {
+  const m = {};
+  rows.forEach(r => { if (r.Setting_Key) m[r.Setting_Key] = r.Setting_Value; });
+  APP_CONFIG.settings = m;
+  const num = (k, d) => (m[k] !== undefined && m[k] !== '' && !isNaN(parseFloat(m[k]))) ? parseFloat(m[k]) : d;
+  APP_CONFIG.co2PerKm = num('co2_per_km', APP_CONFIG.co2PerKm);
+  APP_CONFIG.avgRouteKm = num('avg_route_length_km', APP_CONFIG.avgRouteKm);
+  APP_CONFIG.defaultSeats = num('default_total_seats', 35);
+  APP_CONFIG.mapCenter = [num('map_center_lat', 30.0444), num('map_center_lng', 31.2357)];
+}
+
+async function loadRoutes() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName, reportName: 'All_Routes', criteria: 'Active == "Yes"',
+    });
+    state.routes = (resp.code === 3000 && resp.data) ? resp.data : [];
+  } catch (e) { state.routes = []; }
+}
 
 function initUI() {
   const hour = new Date().getHours();
@@ -613,11 +688,71 @@ function openBookingModal(trip, isLegacy = false) {
     </div>
   `;
   document.getElementById('booking-modal').style.display = 'block';
+
+  // F3 — seat selection (real trips only; legacy form has no Seat_Number)
+  state.selectedSeat = null;
+  document.getElementById('seat-selected-label').textContent = '';
+  const seatSection = document.getElementById('seat-map-section');
+  if (isLegacy) {
+    seatSection.style.display = 'none';
+  } else {
+    seatSection.style.display = 'block';
+    renderSeatMap(trip);
+  }
+}
+
+async function renderSeatMap(trip) {
+  const grid = document.getElementById('seat-map');
+  const total = parseInt(trip.Total_Seats || trip.Number_of_Seats || 35);
+  grid.innerHTML = '<div style="color:var(--muted);font-size:0.8rem;">Loading seats…</div>';
+
+  // Which seats are already taken on this trip?
+  const taken = new Set();
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: APP_CONFIG.reports.bookings,
+      criteria: `Trip_ID == ${trip.ID} && Status != "Cancelled"`,
+    });
+    if (resp.code === 3000 && resp.data) {
+      resp.data.forEach(b => { if (b.Seat_Number) taken.add(parseInt(b.Seat_Number)); });
+    }
+  } catch (e) { /* if the lookup fails, show all seats as available */ }
+
+  // 2 + aisle + 2 layout
+  grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+  grid.innerHTML = '';
+  for (let n = 1; n <= total; n++) {
+    const isTaken = taken.has(n);
+    const btn = document.createElement('button');
+    btn.id = `seat-${n}`;
+    btn.textContent = n;
+    btn.disabled = isTaken;
+    btn.style.cssText = `padding:8px 0;border-radius:8px;border:1px solid ${isTaken ? '#334155' : 'rgba(99,102,241,0.5)'};` +
+      `background:${isTaken ? '#1e293b' : 'rgba(99,102,241,0.15)'};color:${isTaken ? '#475569' : 'white'};` +
+      `font-size:0.8rem;cursor:${isTaken ? 'not-allowed' : 'pointer'};`;
+    if (!isTaken) btn.onclick = () => selectSeat(n);
+    grid.appendChild(btn);
+    // aisle gap after every 2nd seat in a row of 4 (col positions handled by 5-col grid)
+    if (n % 4 === 2) { const sp = document.createElement('div'); grid.appendChild(sp); }
+  }
+}
+
+function selectSeat(n) {
+  if (state.selectedSeat) {
+    const prev = document.getElementById(`seat-${state.selectedSeat}`);
+    if (prev) { prev.style.background = 'rgba(99,102,241,0.15)'; prev.style.borderColor = 'rgba(99,102,241,0.5)'; }
+  }
+  state.selectedSeat = n;
+  const el = document.getElementById(`seat-${n}`);
+  if (el) { el.style.background = 'var(--eco-green)'; el.style.borderColor = 'var(--eco-green)'; }
+  document.getElementById('seat-selected-label').textContent = `Seat ${n}`;
 }
 
 function closeBookingModal() {
   document.getElementById('booking-modal').style.display = 'none';
   state.selectedTrip = null;
+  state.selectedSeat = null;
 }
 
 async function confirmBooking() {
@@ -627,25 +762,22 @@ async function confirmBooking() {
   btn.textContent = 'Booking...';
 
   const trip = state.selectedTrip;
-  const qrHash = generateQRHash(state.currentUser.email, trip.ID, Date.now());
 
   try {
+    // Server-authoritative: the On-Add workflow (01_on_booking_submit) generates
+    // QR_Hash, Status, CO2_Saved and Booking_Time. The client never mints the hash
+    // (a client-side hash would never match the stored one, breaking boarding).
     const formData = trip.isLegacy ? {
       Employee_Name: state.currentUser.name,
       HITS_ID: state.currentUser.hitsId || state.currentUser.id,
       Employee_Email: state.currentUser.email,
       Dropoff_Point: trip.Dropoff_Point,
       Date_Time_of_Departure: trip.Available_From,
-      QR_Hash: qrHash,
-      Status: 'Confirmed',
-      CO2_Saved: (APP_CONFIG.avgRouteKm * APP_CONFIG.co2PerKm).toFixed(2),
     } : {
       Employee_ID: state.currentUser.id,
       Employee_Email: state.currentUser.email,
       Trip_ID: trip.ID,
-      QR_Hash: qrHash,
-      Status: 'Confirmed',
-      CO2_Saved: (APP_CONFIG.avgRouteKm * APP_CONFIG.co2PerKm).toFixed(2),
+      ...(state.selectedSeat ? { Seat_Number: state.selectedSeat } : {}),
     };
 
     const resp = await ZOHO.CREATOR.API.addRecord({
@@ -655,9 +787,22 @@ async function confirmBooking() {
     });
 
     if (resp.code === 3000) {
-      state.activeBooking = { ...formData, ID: resp.data?.ID };
+      const newId = resp.data?.ID;
       closeBookingModal();
       showToast('✅ Booking confirmed! Check your QR pass.');
+      // Re-fetch the saved record to read the server-generated QR_Hash.
+      let booking = { ...formData, ID: newId };
+      if (!trip.isLegacy && newId) {
+        try {
+          const fetched = await ZOHO.CREATOR.API.getAllRecords({
+            appName: APP_CONFIG.appName,
+            reportName: APP_CONFIG.reports.bookings,
+            criteria: `ID == ${newId}`,
+          });
+          if (fetched.code === 3000 && fetched.data && fetched.data.length) booking = fetched.data[0];
+        } catch (e) { /* fall back to the local copy if the re-fetch fails */ }
+      }
+      state.activeBooking = booking;
       showActiveBanner(state.activeBooking);
       generateQRPass(state.activeBooking);
       await loadMyBookings();
@@ -695,16 +840,6 @@ async function joinStandby(trip, tripId) {
 // ─────────────────────────────────────────────
 // QR PASS
 // ─────────────────────────────────────────────
-function generateQRHash(email, tripId, ts) {
-  let hash = 0;
-  const str = `${email}:${tripId}:${ts}`;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return `CTMS-${Math.abs(hash).toString(16).toUpperCase().padStart(8, '0')}`;
-}
-
 function generateQRPass(booking) {
   const pass = document.getElementById('qr-pass');
   const noBooking = document.getElementById('qr-no-booking');
@@ -712,17 +847,19 @@ function generateQRPass(booking) {
   pass.style.display = 'block';
   noBooking.style.display = 'none';
 
-  const qrData = JSON.stringify({
-    hash: booking.QR_Hash,
-    emp: state.currentUser.email,
-    trip: booking.Trip_ID || booking.ID,
-    ts: Date.now(),
-  });
-
-  QRCode.toCanvas(document.getElementById('qr-canvas'), qrData, {
-    width: 180, margin: 1,
-    color: { dark: '#000000', light: '#ffffff' },
-  });
+  // QR_Hash is set server-side by the booking workflow; legacy bookings have none.
+  if (booking.QR_Hash) {
+    const qrData = JSON.stringify({
+      hash: booking.QR_Hash,
+      emp: state.currentUser.email,
+      trip: booking.Trip_ID || booking.ID,
+      ts: Date.now(),
+    });
+    QRCode.toCanvas(document.getElementById('qr-canvas'), qrData, {
+      width: 180, margin: 1,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+  }
 
   document.getElementById('pass-name').textContent = state.currentUser.name || '--';
   document.getElementById('pass-hitsid').textContent = state.currentUser.hitsId || '--';
@@ -739,7 +876,7 @@ function initMap() {
   const mapEl = document.getElementById('live-map');
   if (!mapEl || state.map) return;
 
-  state.map = L.map('live-map', { zoomControl: true, attributionControl: false }).setView([30.0444, 31.2357], 11);
+  state.map = L.map('live-map', { zoomControl: true, attributionControl: false }).setView(APP_CONFIG.mapCenter || [30.0444, 31.2357], 11);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     maxZoom: 19,
   }).addTo(state.map);
@@ -748,7 +885,7 @@ function initMap() {
     html: `<div style="width:32px;height:32px;background:#6366f1;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.5);"></div>`,
     iconSize: [32, 32], iconAnchor: [16, 28],
   });
-  state.busMarker = L.marker([30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
+  state.busMarker = L.marker(APP_CONFIG.mapCenter || [30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
 
   startTrackingPolling();
 }
@@ -757,9 +894,16 @@ function startTrackingPolling() {
   if (state.trackingInterval) return;
   state.trackingInterval = setInterval(pollBusLocation, 10000);
   pollBusLocation();
+  if (!state.visibilityHooked) {
+    state.visibilityHooked = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) pollBusLocation(); // refresh instantly on return
+    });
+  }
 }
 
 async function pollBusLocation() {
+  if (document.hidden) return; // skip while app is backgrounded
   if (!state.activeBooking) return;
   const tripId = state.activeBooking.Trip_ID || state.activeBooking.ID;
   try {
@@ -914,15 +1058,14 @@ Keep response under 100 words. Format: {"message": "...", "trip_id": "...", "con
 }
 
 async function callAI(prompt) {
-  // Use Zoho Flow webhook as proxy to avoid exposing API key in frontend
-  // Fallback to direct call if configured
-  const resp = await fetch(`${APP_CONFIG.aiEndpoint}?key=${APP_CONFIG.aiKey}`, {
+  // Proxied through Zoho Flow so the Gemini key stays server-side.
+  const resp = await fetch(APP_CONFIG.aiProxyUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    body: JSON.stringify({ prompt }),
   });
   const data = await resp.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  const text = data.text || data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
   const json = text.match(/\{.*\}/s)?.[0] || '{}';
   return JSON.parse(json);
 }
@@ -1044,6 +1187,124 @@ function showScreen(name) {
   if (name === 'map') { state.map?.invalidateSize(); }
   if (name === 'eco') { updateEcoUI(); loadLeaderboard(); }
   if (name === 'qr') { generateQRPass(state.activeBooking); }
+  if (name === 'schedule') { initScheduleScreen(); }
+}
+
+// ─────────────────────────────────────────────
+// F1 — SMART RECURRING COMMUTE
+// ─────────────────────────────────────────────
+const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+function initScheduleScreen() {
+  // Populate the route dropdown from currently loaded trips (unique routes)
+  const sel = document.getElementById('sched-route');
+  if (sel && !sel.dataset.filled) {
+    // Prefer the facilities-managed Routes master; fall back to routes seen on live trips
+    let routes = (state.routes || []).map(r => r.Route_Name || r.Route).filter(Boolean);
+    if (!routes.length) routes = [...new Set(state.trips.map(t => t.Route || t.Dropoff_Point).filter(Boolean))];
+    sel.innerHTML = routes.length
+      ? routes.map(r => `<option value="${r}">${r}</option>`).join('')
+      : '<option value="">No routes available yet</option>';
+    sel.dataset.filled = '1';
+  }
+  // Render the day toggles once
+  const dayWrap = document.getElementById('sched-days');
+  if (dayWrap && !dayWrap.dataset.filled) {
+    const labels = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+    dayWrap.innerHTML = DAY_KEYS.map(d =>
+      `<button type="button" id="day-${d}" onclick="toggleDay('${d}')" style="padding:8px 10px;border-radius:8px;border:1px solid rgba(99,102,241,0.4);background:rgba(99,102,241,0.12);color:white;font-size:0.75rem;cursor:pointer;">${labels[d]}</button>`
+    ).join('');
+    dayWrap.dataset.filled = '1';
+    state.schedDays = new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
+    DAY_KEYS.forEach(d => paintDay(d));
+  }
+  loadSchedule();
+}
+
+function toggleDay(d) {
+  if (!state.schedDays) state.schedDays = new Set();
+  if (state.schedDays.has(d)) state.schedDays.delete(d); else state.schedDays.add(d);
+  paintDay(d);
+}
+
+function paintDay(d) {
+  const el = document.getElementById(`day-${d}`);
+  if (!el) return;
+  const on = state.schedDays?.has(d);
+  el.style.background = on ? 'var(--primary)' : 'rgba(99,102,241,0.12)';
+  el.style.borderColor = on ? 'var(--primary)' : 'rgba(99,102,241,0.4)';
+}
+
+async function loadSchedule() {
+  const list = document.getElementById('schedule-list');
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: 'All_Commute_Templates',
+      criteria: `Employee_Email == "${state.currentUser.email}"`,
+    });
+    const rows = (resp.code === 3000 && resp.data) ? resp.data : [];
+    if (!rows.length) {
+      list.innerHTML = '<div style="color:var(--muted);font-size:0.82rem;padding:8px;">No recurring trips yet. Add one above.</div>';
+      return;
+    }
+    list.innerHTML = rows.map(r => {
+      const days = (r.Days_Active || '').split(',').map(d => d.trim()).filter(Boolean).map(d => d[0].toUpperCase() + d.slice(1)).join(' · ');
+      const active = (r.Active === 'Yes');
+      return `<div class="card" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:600;color:white;">${r.Route || '--'}</div>
+          <div style="font-size:0.72rem;color:var(--muted);">${days || 'No days set'}</div>
+          <div style="font-size:0.68rem;color:${active ? 'var(--eco-green)' : 'var(--muted)'};">${active ? '● Active' : '○ Paused'}</div>
+        </div>
+        <button onclick="deleteCommuteTemplate('${r.ID}')" style="background:none;border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:0.72rem;">Delete</button>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--danger);font-size:0.82rem;padding:8px;">Could not load schedule.</div>';
+  }
+}
+
+async function saveCommuteTemplate() {
+  const route = document.getElementById('sched-route').value;
+  const days = [...(state.schedDays || [])];
+  if (!route) { showToast('Pick a route first.', 'error'); return; }
+  if (!days.length) { showToast('Select at least one day.', 'error'); return; }
+  const btn = document.getElementById('sched-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await ZOHO.CREATOR.API.addRecord({
+      appName: APP_CONFIG.appName,
+      formName: 'Commute_Templates',
+      data: {
+        Employee_ID: state.currentUser.id,
+        Employee_Email: state.currentUser.email,
+        Route: route,
+        Days_Active: DAY_KEYS.filter(d => days.includes(d)).join(','),
+        Active: 'Yes',
+      },
+    });
+    showToast('✅ Recurring trip saved.');
+    await loadSchedule();
+  } catch (e) {
+    showToast('❌ Could not save schedule.', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save schedule';
+  }
+}
+
+async function deleteCommuteTemplate(id) {
+  try {
+    await ZOHO.CREATOR.API.deleteRecord({
+      appName: APP_CONFIG.appName,
+      reportName: 'All_Commute_Templates',
+      criteria: `ID == ${id}`,
+    });
+    showToast('Schedule removed.');
+    await loadSchedule();
+  } catch (e) {
+    showToast('❌ Could not delete.', 'error');
+  }
 }
 
 function showToast(msg, type = 'info') {

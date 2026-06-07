@@ -160,6 +160,10 @@
       <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1v2h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2v-2h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/></svg>
       AI Insights
     </div>
+    <div class="sidebar-item" onclick="setView('drivers')">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      Driver Scorecard
+    </div>
 
     <div class="sidebar-section" style="margin-top:8px;">Active Buses</div>
     <div id="bus-sidebar-list">
@@ -245,6 +249,22 @@
         <div style="text-align:center;padding:30px;color:var(--muted);">Loading AI recommendations...</div>
       </div>
     </div>
+
+    <!-- Driver Scorecard View (F2) -->
+    <div id="view-drivers" style="display:none;padding:16px;overflow-y:auto;height:100%;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <h2 style="font-size:1rem;font-weight:700;color:white;">Driver Punctuality Scorecard</h2>
+          <p style="font-size:0.78rem;color:var(--muted);margin-top:2px;">Weekly aggregation — generated every Monday 06:00</p>
+        </div>
+        <select id="driver-week" onchange="loadDriverPerformance()" style="background:var(--card);color:white;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:0.8rem;">
+          <option value="">Latest week</option>
+        </select>
+      </div>
+      <div id="driver-scorecard-list">
+        <div style="text-align:center;padding:30px;color:var(--muted);">Loading driver performance...</div>
+      </div>
+    </div>
   </main>
 
   <!-- Right Panel -->
@@ -296,7 +316,7 @@
   <div id="modal-box">
     <div class="modal-title" id="modal-title">Deploy New Route</div>
     <div id="modal-body">
-      <div class="form-field"><div class="form-label">Route Name / Destination</div><input class="form-input" id="f-route" placeholder="e.g. New Cairo - Dropoff 1"></div>
+      <div class="form-field"><div class="form-label">Route Name / Destination</div><select class="form-input" id="f-route"><option value="">Loading routes…</option></select></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div class="form-field"><div class="form-label">Assign Bus</div><select class="form-input" id="f-bus"><option value="">Select bus...</option></select></div>
         <div class="form-field"><div class="form-label">Departure Time</div><input class="form-input" id="f-depart" type="time"></div>
@@ -316,8 +336,8 @@
 // CONFIG
 // ─────────────────────────────────────────────
 const APP_CONFIG = {
-  accountOwner: 'centrocdx',
-  appName: 'transportation-app',
+  accountOwner: 'youfioudo',
+  appName: 'centro-transportaion-app',
   reports: {
     trips: 'All_Active_Timings',
     bookings: 'All_TMS_Bookings',
@@ -330,8 +350,9 @@ const APP_CONFIG = {
   },
   forms: { trips: 'Active_Timings', buses: 'Buses' },
   refreshMs: 15000,
-  aiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
-  aiKey: 'YOUR_GEMINI_API_KEY',
+  // Gemini is called server-side via a Zoho Flow proxy so the API key never ships to the client.
+  // The proxy accepts { prompt } and returns either { text } or the raw Gemini response.
+  aiProxyUrl: 'REPLACE_WITH_AI_PROXY_WEBHOOK_URL',
 };
 
 // ─────────────────────────────────────────────
@@ -357,20 +378,60 @@ ZOHO.CREATOR.init().then(() => {
   init();
 }).catch(() => init());
 
-function init() {
+async function init() {
+  await loadSettings();   // App_Settings master (facilities-editable) — before map/charts
+  await loadRoutes();     // Routes master (facilities-editable)
   initMap();
   initCharts();
-  refreshAll();
+  await refreshAll();
   startAutoRefresh();
   updateClock();
   setInterval(updateClock, 60000);
 }
 
 // ─────────────────────────────────────────────
+// DYNAMIC CONFIG — App_Settings + Routes master forms
+// (facilities edit these in Creator; values below are fallbacks only)
+// ─────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({ appName: APP_CONFIG.appName, reportName: 'All_App_Settings' });
+    if (resp.code === 3000 && resp.data) applySettings(resp.data);
+  } catch (e) { /* keep hardcoded fallbacks */ }
+}
+
+function applySettings(rows) {
+  const m = {};
+  rows.forEach(r => { if (r.Setting_Key) m[r.Setting_Key] = r.Setting_Value; });
+  APP_CONFIG.settings = m;
+  const num = (k, d) => (m[k] !== undefined && m[k] !== '' && !isNaN(parseFloat(m[k]))) ? parseFloat(m[k]) : d;
+  APP_CONFIG.mapCenter = [num('map_center_lat', 30.0444), num('map_center_lng', 31.2357)];
+  APP_CONFIG.refreshMs = num('mgmt_refresh_seconds', APP_CONFIG.refreshMs / 1000) * 1000;
+  APP_CONFIG.defaultSeats = num('default_total_seats', 35);
+}
+
+async function loadRoutes() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({ appName: APP_CONFIG.appName, reportName: 'All_Routes', criteria: 'Active == "Yes"' });
+    st.routes = (resp.code === 3000 && resp.data) ? resp.data : [];
+  } catch (e) { st.routes = []; }
+  populateRouteOptions();
+}
+
+function populateRouteOptions() {
+  const sel = document.getElementById('f-route');
+  if (!sel || sel.tagName !== 'SELECT') return;
+  const routes = (st.routes || []).map(r => r.Route_Name || r.Route).filter(Boolean);
+  sel.innerHTML = routes.length
+    ? '<option value="">Select route…</option>' + routes.map(r => `<option value="${r}">${r}</option>`).join('')
+    : '<option value="">No routes defined — add them in the Routes form</option>';
+}
+
+// ─────────────────────────────────────────────
 // MAP
 // ─────────────────────────────────────────────
 function initMap() {
-  st.map = L.map('global-map', { zoomControl: false, attributionControl: false }).setView([30.0444, 31.2357], 11);
+  st.map = L.map('global-map', { zoomControl: false, attributionControl: false }).setView(APP_CONFIG.mapCenter || [30.0444, 31.2357], 11);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(st.map);
   L.control.zoom({ position: 'bottomright' }).addTo(st.map);
 }
@@ -425,8 +486,38 @@ function updateBusMarker(tripId, lat, lng) {
 // DATA LOADING
 // ─────────────────────────────────────────────
 async function refreshAll() {
+  if (document.hidden) return; // skip background polling to spare API quota + battery
   await Promise.all([loadTrips(), loadBookings(), loadAlerts(), loadStandby()]);
   updateHeaderStats();
+  updateCharts();
+}
+
+// Recompute charts from live records (no hardcoded demo numbers)
+function updateCharts() {
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  // Bookings per weekday (last 7 days)
+  const byDay = [0, 0, 0, 0, 0, 0, 0];
+  (st.bookings || []).forEach(b => {
+    const ts = b.Booking_Time || b.Added_Time || b.Date_Time_of_Departure;
+    const d = ts ? new Date(ts) : null;
+    if (d && !isNaN(d)) { byDay[(d.getDay() + 6) % 7] += 1; } // Mon=0 … Sun=6
+  });
+  if (st.charts.trips) { st.charts.trips.data.datasets[0].data = byDay; st.charts.trips.update(); }
+
+  // Fleet status doughnut from trip statuses
+  const inProg = (st.trips || []).filter(t => t.Status === 'In_Progress').length;
+  const active = (st.trips || []).filter(t => t.Status === 'Active').length;
+  const done = (st.trips || []).filter(t => t.Status === 'Completed').length;
+  if (st.charts.util) { st.charts.util.data.datasets[0].data = [inProg, active, done]; st.charts.util.update(); }
+
+  // Weekday demand radar (Mon–Fri) from real bookings + fleet capacity
+  if (st.charts.demand) {
+    const demand = byDay.slice(0, 5);
+    const capacity = (st.trips || []).reduce((s, t) => s + (parseInt(t.Total_Seats || t.Number_of_Seats || 0)), 0);
+    st.charts.demand.data.datasets[0].data = demand;
+    st.charts.demand.data.datasets[1].data = [capacity, capacity, capacity, capacity, capacity];
+    st.charts.demand.update();
+  }
 }
 
 async function loadTrips() {
@@ -682,8 +773,9 @@ function renderAIInsights(insights) {
     el.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">No AI recommendations available. Click "Run Analysis Now" to generate insights.</div>';
     return;
   }
+  const ICONS = { overflow: '🚌', optimization: '⚡', route_optimization: '🗺️', fleet: '🚍', missing_route: '➕' };
   el.innerHTML = insights.map(ins => {
-    const typeIcon = ins.Type === 'overflow' ? '🚌' : ins.Type === 'optimization' ? '⚡' : '📊';
+    const typeIcon = ICONS[ins.Type] || '📊';
     const conf = ins.Confidence || ins.Confidence_Score || '--';
     return `
       <div class="ai-insight-card">
@@ -691,7 +783,7 @@ function renderAIInsights(insights) {
           <div class="insight-title">${typeIcon} ${ins.Title || ins.Recommendation_Title}</div>
           <span style="font-size:0.7rem;background:rgba(99,102,241,0.2);color:var(--primary);padding:2px 7px;border-radius:10px;">${conf}% confidence</span>
         </div>
-        <div class="insight-body">${ins.Body || ins.Recommendation_Body}</div>
+        <div class="insight-body" style="white-space:pre-line;">${ins.Body || ins.Recommendation_Body}</div>
         <div>
           <button class="approve-btn" onclick="approveAIInsight('${ins.ID}', this)">✓ Approve</button>
           <button class="dismiss-btn" onclick="dismissAIInsight('${ins.ID}', this)">Dismiss</button>
@@ -713,7 +805,7 @@ function initCharts() {
     data: {
       labels: days,
       datasets: [{
-        data: [42,55,48,60,71,38,52],
+        data: [0,0,0,0,0,0,0], // populated by updateCharts() from live bookings
         borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)',
         tension: 0.4, fill: true, pointRadius: 3, pointBackgroundColor: '#6366f1',
       }],
@@ -726,8 +818,8 @@ function initCharts() {
   st.charts.util = new Chart(uCtx, {
     type: 'doughnut',
     data: {
-      labels: ['In Use', 'Available', 'Maintenance'],
-      datasets: [{ data: [6, 3, 1], backgroundColor: ['#10b981', '#6366f1', '#f59e0b'], borderWidth: 0, hoverOffset: 4 }],
+      labels: ['In Progress', 'Active', 'Completed'],
+      datasets: [{ data: [0, 0, 0], backgroundColor: ['#10b981', '#6366f1', '#f59e0b'], borderWidth: 0, hoverOffset: 4 }], // populated by updateCharts()
     },
     options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 10 }, padding: 8 } } }, cutout: '65%' },
   });
@@ -741,9 +833,9 @@ function initCharts() {
       data: {
         labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
         datasets: [
-          { label: 'Demand', data: [75, 82, 68, 91, 88], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.2)', pointBackgroundColor: '#6366f1' },
-          { label: 'Capacity', data: [100, 100, 80, 100, 100], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', pointBackgroundColor: '#10b981' },
-        ],
+          { label: 'Demand', data: [0, 0, 0, 0, 0], borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.2)', pointBackgroundColor: '#6366f1' },
+          { label: 'Capacity', data: [0, 0, 0, 0, 0], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', pointBackgroundColor: '#10b981' },
+        ], // populated by updateCharts()
       },
       options: { responsive: true, plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } }, scales: { r: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.07)' }, pointLabels: { color: '#94a3b8', font: { size: 9 } } } } },
     });
@@ -809,12 +901,12 @@ Analyze this data:
 Return exactly 3 fleet recommendations as JSON array: [{"Title":"...","Body":"...","Confidence":85,"Type":"fleet|optimization|overflow"}]
 Keep each body under 40 words. Focus on actionable insights.`;
 
-    const resp = await fetch(`${APP_CONFIG.aiEndpoint}?key=${APP_CONFIG.aiKey}`, {
+    const resp = await fetch(APP_CONFIG.aiProxyUrl, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      body: JSON.stringify({ prompt }),
     });
     const data = await resp.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const text = data.text || data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
     const json = text.match(/\[.*\]/s)?.[0] || '[]';
     const insights = JSON.parse(json);
     renderAIInsights(insights.map((ins, i) => ({ ...ins, ID: 'ai-' + i })));
@@ -884,16 +976,74 @@ async function cancelRoute(tripId) {
 // ─────────────────────────────────────────────
 function setView(name) {
   st.currentView = name;
-  ['map', 'heatmap', 'routes', 'ai'].forEach(v => {
-    document.getElementById(`view-${v}`).style.display = v === name ? 'block' : 'none';
+  ['map', 'heatmap', 'routes', 'ai', 'drivers'].forEach(v => {
+    const el = document.getElementById(`view-${v}`);
+    if (el) el.style.display = v === name ? 'block' : 'none';
   });
-  document.querySelectorAll('.sidebar-item').forEach((el, i) => {
-    const views = ['map', 'heatmap', 'routes', 'ai'];
+  document.querySelectorAll('.sidebar-item').forEach((el) => {
     el.classList.toggle('active', el.getAttribute('onclick') === `setView('${name}')`);
   });
   if (name === 'map') { setTimeout(() => st.map?.invalidateSize(), 50); }
   if (name === 'heatmap') loadHeatmapData();
   if (name === 'ai') loadAIInsights();
+  if (name === 'drivers') loadDriverPerformance();
+}
+
+// ─────────────────────────────────────────────
+// F2 — DRIVER PUNCTUALITY SCORECARD
+// ─────────────────────────────────────────────
+async function loadDriverPerformance() {
+  const list = document.getElementById('driver-scorecard-list');
+  if (!list) return;
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({
+      appName: APP_CONFIG.appName,
+      reportName: 'All_Driver_Performances',
+      criteria: 'Rank != 0',
+    });
+    let rows = (resp.code === 3000 && resp.data) ? resp.data : [];
+    if (!rows.length) { renderDriverScorecard([]); return; }
+
+    // Populate the week selector, then filter to the chosen (or latest) week
+    const weeks = [...new Set(rows.map(r => r.Week_Start).filter(Boolean))].sort().reverse();
+    const sel = document.getElementById('driver-week');
+    if (sel && sel.options.length <= 1) {
+      weeks.forEach(w => { const o = document.createElement('option'); o.value = w; o.textContent = `Week of ${w}`; sel.appendChild(o); });
+    }
+    const chosen = (sel && sel.value) ? sel.value : weeks[0];
+    rows = rows.filter(r => r.Week_Start === chosen)
+               .sort((a, b) => parseInt(a.Rank || 99) - parseInt(b.Rank || 99));
+    renderDriverScorecard(rows);
+  } catch (e) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">No driver scorecard data yet. It generates every Monday 06:00.</div>';
+  }
+}
+
+function renderDriverScorecard(rows) {
+  const list = document.getElementById('driver-scorecard-list');
+  if (!rows.length) {
+    list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted);">No driver scorecard data yet. It generates every Monday 06:00.</div>';
+    return;
+  }
+  const medal = (r) => (r == 1 ? '🥇' : r == 2 ? '🥈' : r == 3 ? '🥉' : `#${r}`);
+  const scoreColor = (s) => (s >= 85 ? 'var(--success)' : s >= 65 ? 'var(--accent)' : 'var(--danger)');
+  list.innerHTML = rows.map(r => {
+    const score = parseFloat(r.Score || 0);
+    return `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:14px;">
+      <div style="font-size:1.3rem;min-width:36px;text-align:center;">${medal(r.Rank)}</div>
+      <div style="flex:1;">
+        <div style="font-weight:700;color:white;">${r.Driver_Name || r.Driver_Email || 'Driver'}</div>
+        <div style="font-size:0.74rem;color:var(--muted);margin-top:2px;">
+          ${r.On_Time_Pct || 0}% on-time · ${r.Trips_Completed || 0} trips · ${r.Late_Count || 0} late · ${r.Anomaly_Count || 0} anomalies
+          ${parseFloat(r.Avg_Delay_Min || 0) > 0 ? ` · avg +${r.Avg_Delay_Min}min` : ''}
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:1.3rem;font-weight:700;color:${scoreColor(score)};">${score.toFixed(0)}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">SCORE</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function switchPanelTab(name) {
@@ -908,6 +1058,12 @@ function switchPanelTab(name) {
 function startAutoRefresh() {
   if (st.refreshInterval) clearInterval(st.refreshInterval);
   st.refreshInterval = setInterval(refreshAll, APP_CONFIG.refreshMs);
+  if (!st.visibilityHooked) {
+    st.visibilityHooked = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && st.autoRefresh) refreshAll(); // refresh instantly on return
+    });
+  }
 }
 
 function toggleAutoRefresh() {

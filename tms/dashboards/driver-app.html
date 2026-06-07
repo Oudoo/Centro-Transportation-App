@@ -199,6 +199,11 @@
     <h2 style="font-size:1rem;font-weight:700;color:white;">Passenger Manifest</h2>
     <button onclick="refreshManifest()" style="background:none;border:none;color:var(--muted);font-size:0.8rem;cursor:pointer;">Refresh</button>
   </div>
+  <!-- I2 — AI-optimized pickup sequence -->
+  <div id="pickup-sequence" class="card" style="display:none;margin-bottom:12px;border-left:3px solid var(--accent,#f59e0b);">
+    <div style="font-size:0.8rem;font-weight:700;color:white;margin-bottom:6px;">🗺️ Optimized Pickup Order</div>
+    <div id="pickup-sequence-body" style="font-size:0.82rem;color:var(--muted);white-space:pre-line;line-height:1.5;"></div>
+  </div>
   <div class="card" style="padding:0;overflow:hidden;">
     <div id="pax-list" style="padding:4px 16px;"></div>
   </div>
@@ -261,8 +266,8 @@
 // CONFIG
 // ─────────────────────────────────────────────
 const APP_CONFIG = {
-  accountOwner: 'centrocdx',
-  appName: 'transportation-app',
+  accountOwner: 'youfioudo',
+  appName: 'centro-transportaion-app',
   forms: {
     trackingLogs: 'Live_Tracking_Logs',
     bookings: 'New_Booking_Request',
@@ -305,19 +310,35 @@ window.addEventListener('offline', handleOffline);
 
 ZOHO.CREATOR.init().then(() => {
   return ZOHO.CREATOR.UTIL.getInitParams();
-}).then(params => {
+}).then(async params => {
   state.driver = params.loginUser || {};
   document.getElementById('driver-name').textContent = state.driver.name || 'Driver';
+  await loadSettings();
   loadDriverTrip();
   initMiniMap();
   loadOfflineQueue();
   refreshManifest();
-}).catch(() => {
+}).catch(async () => {
   state.driver = { name: 'Demo Driver', email: 'driver@centro.com', id: 'DRV-001' };
   document.getElementById('driver-name').textContent = 'Demo Driver';
+  await loadSettings();
   initMiniMap();
   loadOfflineQueue();
 });
+
+// App_Settings master (facilities-editable); values in APP_CONFIG are fallbacks
+async function loadSettings() {
+  try {
+    const resp = await ZOHO.CREATOR.API.getAllRecords({ appName: APP_CONFIG.appName, reportName: 'All_App_Settings' });
+    if (resp.code === 3000 && resp.data) {
+      const m = {};
+      resp.data.forEach(r => { if (r.Setting_Key) m[r.Setting_Key] = r.Setting_Value; });
+      const num = (k, d) => (m[k] !== undefined && m[k] !== '' && !isNaN(parseFloat(m[k]))) ? parseFloat(m[k]) : d;
+      APP_CONFIG.gpsIntervalMs = num('ping_interval_seconds', APP_CONFIG.gpsIntervalMs / 1000) * 1000;
+      APP_CONFIG.mapCenter = [num('map_center_lat', 30.0444), num('map_center_lng', 31.2357)];
+    }
+  } catch (e) { /* keep fallbacks */ }
+}
 
 // ─────────────────────────────────────────────
 // TRIP MANAGEMENT
@@ -335,6 +356,7 @@ async function loadDriverTrip() {
       document.getElementById('driver-bus').textContent = 'Bus: ' + (state.currentTrip.Bus_Code || state.currentTrip.Bus?.display_value || '--');
       document.getElementById('trip-dest').textContent = state.currentTrip.Route || state.currentTrip.Dropoff_Point || 'Destination';
       document.getElementById('stat-seats').textContent = state.currentTrip.Available_Seats || '--';
+      renderPickupSequence(state.currentTrip.Optimized_Sequence);
       refreshManifest();
     }
   } catch (e) { console.warn('Trip load:', e); }
@@ -643,6 +665,18 @@ async function refreshManifest() {
   }
 }
 
+function renderPickupSequence(seq) {
+  const wrap = document.getElementById('pickup-sequence');
+  const body = document.getElementById('pickup-sequence-body');
+  if (!wrap || !body) return;
+  if (seq && seq.trim()) {
+    body.textContent = seq.trim();
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
 function renderPassengerList() {
   const list = document.getElementById('pax-list');
   const boarded = state.passengerList.filter(p => p.Status === 'Boarded').length;
@@ -657,11 +691,12 @@ function renderPassengerList() {
   list.innerHTML = state.passengerList.map(p => {
     const name = p.Employee_Name?.display_value || p.Employee_ID || 'Passenger';
     const isBoarded = p.Status === 'Boarded';
+    const seat = p.Seat_Number ? `<span style="font-size:0.7rem;background:rgba(99,102,241,0.2);color:#a5b4fc;padding:1px 6px;border-radius:6px;margin-left:6px;">Seat ${p.Seat_Number}</span>` : '';
     return `
       <div class="pax-row">
         <div class="pax-avatar">${name.charAt(0).toUpperCase()}</div>
         <div style="flex:1;">
-          <div style="font-size:0.88rem;font-weight:600;">${name}</div>
+          <div style="font-size:0.88rem;font-weight:600;">${name}${seat}</div>
           <div style="font-size:0.73rem;color:var(--muted);">${p.HITS_ID || p.Employee_Email || '--'}</div>
         </div>
         <div class="scan-badge ${isBoarded ? 'scanned' : 'not-scanned'}" style="font-size:0.75rem;">
@@ -844,10 +879,10 @@ async function triggerSOS() {
 function initMiniMap() {
   const el = document.getElementById('map-mini');
   if (!el || state.map) return;
-  state.map = L.map('map-mini', { zoomControl: false, attributionControl: false }).setView([30.0444, 31.2357], 13);
+  state.map = L.map('map-mini', { zoomControl: false, attributionControl: false }).setView(APP_CONFIG.mapCenter || [30.0444, 31.2357], 13);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(state.map);
   const busIcon = L.divIcon({ html: `<div style="width:28px;height:28px;background:#6366f1;border-radius:50%;border:3px solid white;"></div>`, iconSize:[28,28], iconAnchor:[14,14] });
-  state.busMarker = L.marker([30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
+  state.busMarker = L.marker(APP_CONFIG.mapCenter || [30.0444, 31.2357], { icon: busIcon }).addTo(state.map);
 }
 
 // ─────────────────────────────────────────────

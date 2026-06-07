@@ -9,8 +9,8 @@ today = zoho.today.toString("yyyy-MM-dd");
 tomorrow = zoho.today.addDay(1).toString("yyyy-MM-dd");
 
 todayBookings = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_TMS_Bookings",
     "Booking_Time >= " + '"' + today + '"'
 );
@@ -18,8 +18,8 @@ todayBookings = zoho.creator.getRecords(
 // Fallback to legacy form
 if (todayBookings.isEmpty()) {
     todayBookings = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Bookings",
         "Added_Time >= " + '"' + today + '"'
     );
@@ -32,7 +32,7 @@ for each booking in todayBookings {
     if (route.isNull()) { route = booking.get("Route"); }
     if (route.isNull()) { continue; }
 
-    if (routeDemand.containsKey(route)) {
+    if (routeDemand.containKey(route)) {
         routeDemand.put(route, routeDemand.get(route) + 1);
     } else {
         routeDemand.put(route, 1);
@@ -41,8 +41,8 @@ for each booking in todayBookings {
 
 // ── Fetch active trips and their capacity ─────────────────────────────────────
 activeTrips = zoho.creator.getRecords(
-    "centrocdx",
-    "transportation-app",
+    "youfioudo",
+    "centro-transportaion-app",
     "All_Active_Timings",
     "Status != \"Cancelled\""
 );
@@ -70,9 +70,8 @@ for each trip in activeTrips {
 
 // ── Generate recommendations ──────────────────────────────────────────────────
 recommendations = list();
-for each routeEntry in routeDemand.entrySet() {
-    route = routeEntry.getKey();
-    demand = routeEntry.getValue().toLong();
+for each route in routeDemand.keys() {
+    demand = routeDemand.get(route).toLong();
 
     capacityData = tripCapacity.get(route);
     if (capacityData.isNull()) {
@@ -126,8 +125,8 @@ savedCount = 0;
 for each rec in recommendations {
     // Check for existing pending recommendation for this route to avoid duplicates
     existing = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_AI_Fleet_Recommendations",
         "Route == " + '"' + rec.get("Route") + '"' + " && Status == \"Pending\""
     );
@@ -148,18 +147,17 @@ for each rec in recommendations {
     recToSave.put("Generated_At", zoho.currenttime);
     recToSave.put("Analysis_Type", "Hourly_Demand");
 
-    zoho.creator.createRecord("centrocdx", "transportation-app", "AI_Fleet_Recommendations", recToSave);
+    zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "AI_Fleet_Recommendations", recToSave);
     savedCount = savedCount + 1;
 }
 
 // ── Update heatmap scores ─────────────────────────────────────────────────────
-for each routeEntry in routeDemand.entrySet() {
-    route = routeEntry.getKey();
-    demand = routeEntry.getValue().toLong();
+for each route in routeDemand.keys() {
+    demand = routeDemand.get(route).toLong();
 
     existingHeat = zoho.creator.getRecords(
-        "centrocdx",
-        "transportation-app",
+        "youfioudo",
+        "centro-transportaion-app",
         "All_Heatmap_Data",
         "Dropoff_Zone == " + '"' + route + '"' + " && Timestamp >= " + '"' + today + '"'
     );
@@ -170,15 +168,18 @@ for each routeEntry in routeDemand.entrySet() {
     heatData.put("Timestamp", zoho.currenttime);
 
     if (existingHeat.isEmpty()) {
-        zoho.creator.createRecord("centrocdx", "transportation-app", "Heatmap_Data", heatData);
+        zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "Heatmap_Data", heatData);
     } else {
         heatData.put("Demand_Score", demand);
-        zoho.creator.updateRecord("centrocdx", "transportation-app", "All_Heatmap_Data", existingHeat.get(0).get("ID"), heatData);
+        zoho.creator.updateRecord("youfioudo", "centro-transportaion-app", "All_Heatmap_Data", existingHeat.get(0).get("ID"), heatData);
     }
 }
 
 // ── Notify management if critical recommendations found ───────────────────────
-criticalRecs = recommendations.filter(r -> r.get("Priority") == "Critical");
+criticalRecs = list();
+for each r in recommendations {
+    if (r.get("Priority") == "Critical") { criticalRecs.add(r); }
+}
 if (criticalRecs.size() > 0) {
     alertMsg = "🚨 *Fleet Alert — " + criticalRecs.size() + " critical recommendations*\n\n";
     for each rec in criticalRecs {

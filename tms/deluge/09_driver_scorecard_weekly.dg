@@ -1,0 +1,153 @@
+/**
+ * SCHEDULED FUNCTION: F2 — Driver Punctuality Scorecard
+ * Schedule: Every Monday at 06:00 AM (Cairo time)
+ * Purpose: Aggregate the last 7 days of trips per driver into a Driver_Performance
+ *          record (on-time %, anomalies, completion, composite score) and post a
+ *          ranked leaderboard to the ops channel.
+ *
+ * Driver_Performance fields (create in Creator Studio):
+ *   Driver_Email (Email), Driver_Name (Single Line),
+ *   Week_Start (Date), Week_End (Date),
+ *   Trips_Completed (Number), On_Time_Count (Number), Late_Count (Number),
+ *   On_Time_Pct (Decimal), Anomaly_Count (Number), Avg_Delay_Min (Decimal),
+ *   Score (Decimal), Rank (Number)
+ *
+ * Source trips: All_Active_Timings with Driver_Email, Status,
+ *   Departure_Time (scheduled), Actual_Departure_Time, Anomaly_Flagged.
+ * On-time = Actual_Departure within ON_TIME_GRACE_MIN of scheduled Departure_Time.
+ */
+
+// On-time grace is facilities-editable via App_Settings (fallback 5 min)
+settingsMap = map();
+allSettings = zoho.creator.getRecords("youfioudo", "centro-transportaion-app", "All_App_Settings");
+for each s in allSettings { settingsMap.put(s.get("Setting_Key"), s.get("Setting_Value")); }
+ON_TIME_GRACE_MIN = settingsMap.containKey("on_time_grace_minutes") ? settingsMap.get("on_time_grace_minutes").toLong() : 5;
+
+weekStart = zoho.today.addDay(-7).toString("yyyy-MM-dd");
+weekEnd = zoho.today.toString("yyyy-MM-dd");
+
+trips = zoho.creator.getRecords(
+    "youfioudo",
+    "centro-transportaion-app",
+    "All_Active_Timings",
+    "Departure_Time >= " + '"' + weekStart + '"'
+);
+
+// ── Aggregate per driver ──────────────────────────────────────────────────────
+// Each driver maps to: name, completed, onTime, late, anomalies, totalDelayMin
+driverStats = map();
+for each trip in trips {
+    drvEmail = trip.get("Driver_Email");
+    if (drvEmail.isNull() || drvEmail.toString().isEmpty()) { continue; }
+
+    if (!driverStats.containKey(drvEmail)) {
+        ds = map();
+        ds.put("name", trip.get("Driver_Name"));
+        ds.put("completed", 0);
+        ds.put("on_time", 0);
+        ds.put("late", 0);
+        ds.put("anomalies", 0);
+        ds.put("total_delay", 0.0);
+        driverStats.put(drvEmail, ds);
+    }
+    ds = driverStats.get(drvEmail);
+
+    status = trip.get("Status");
+    if (status == "Completed") { ds.put("completed", ds.get("completed").toLong() + 1); }
+
+    if (trip.get("Anomaly_Flagged") == "true") { ds.put("anomalies", ds.get("anomalies").toLong() + 1); }
+
+    // Punctuality — only when both scheduled + actual departure are present
+    sched = trip.get("Departure_Time");
+    actual = trip.get("Actual_Departure_Time");
+    if (!sched.isNull() && !actual.isNull()) {
+        delayMin = (actual.toDateTime().toEpoch() - sched.toDateTime().toEpoch()) / 60000;
+        if (delayMin <= ON_TIME_GRACE_MIN) {
+            ds.put("on_time", ds.get("on_time").toLong() + 1);
+        } else {
+            ds.put("late", ds.get("late").toLong() + 1);
+            ds.put("total_delay", ds.get("total_delay").toDecimal() + delayMin);
+        }
+    }
+    driverStats.put(drvEmail, ds);
+}
+
+// ── Build scored rows ─────────────────────────────────────────────────────────
+// Score = 60% on-time rate + 40% completion-cleanliness, minus anomaly penalty.
+scored = list();
+for each drvEmail in driverStats.keys() {
+    ds = driverStats.get(drvEmail);
+    completed = ds.get("completed").toLong();
+    onTime = ds.get("on_time").toLong();
+    late = ds.get("late").toLong();
+    rated = onTime + late;
+    anomalies = ds.get("anomalies").toLong();
+    totalDelay = ds.get("total_delay").toDecimal();
+
+    onTimePct = rated > 0 ? (onTime.toDecimal() / rated.toDecimal() * 100).setScale(1) : 0;
+    avgDelay = late > 0 ? (totalDelay / late.toDecimal()).setScale(1) : 0;
+    anomalyPenalty = anomalies * 5;
+    score = (onTimePct.toDecimal() * 0.6) + (completed > 0 ? 40 : 0) - anomalyPenalty;
+    if (score < 0) { score = 0; }
+    if (score > 100) { score = 100; }
+
+    row = map();
+    row.put("email", drvEmail);
+    row.put("name", ds.get("name"));
+    row.put("completed", completed);
+    row.put("on_time", onTime);
+    row.put("late", late);
+    row.put("on_time_pct", onTimePct);
+    row.put("anomalies", anomalies);
+    row.put("avg_delay", avgDelay);
+    row.put("score", score.setScale(1));
+    scored.add(row);
+}
+
+// ── Rank by score (descending) — simple selection sort, no lambdas ────────────
+ranked = list();
+remaining = scored;
+while (!remaining.isEmpty()) {
+    bestIdx = 0;
+    bestScore = -1;
+    idx = 0;
+    for each r in remaining {
+        if (r.get("score").toDecimal() > bestScore) {
+            bestScore = r.get("score").toDecimal();
+            bestIdx = idx;
+        }
+        idx = idx + 1;
+    }
+    ranked.add(remaining.get(bestIdx));
+    remaining.remove(remaining.get(bestIdx));
+}
+
+// ── Persist + build leaderboard ───────────────────────────────────────────────
+rankNum = 0;
+leaderboard = "🏁 *Driver Scorecard — week of " + weekStart + "*\n\n";
+for each row in ranked {
+    rankNum = rankNum + 1;
+
+    perfData = map();
+    perfData.put("Driver_Email", row.get("email"));
+    perfData.put("Driver_Name", row.get("name"));
+    perfData.put("Week_Start", weekStart);
+    perfData.put("Week_End", weekEnd);
+    perfData.put("Trips_Completed", row.get("completed"));
+    perfData.put("On_Time_Count", row.get("on_time"));
+    perfData.put("Late_Count", row.get("late"));
+    perfData.put("On_Time_Pct", row.get("on_time_pct"));
+    perfData.put("Anomaly_Count", row.get("anomalies"));
+    perfData.put("Avg_Delay_Min", row.get("avg_delay"));
+    perfData.put("Score", row.get("score"));
+    perfData.put("Rank", rankNum);
+    zoho.creator.createRecord("youfioudo", "centro-transportaion-app", "Driver_Performance", perfData);
+
+    medal = (rankNum == 1 ? "🥇" : rankNum == 2 ? "🥈" : rankNum == 3 ? "🥉" : "  ");
+    leaderboard = leaderboard + medal + " *" + row.get("name") + "* — " +
+        row.get("score") + " pts (" + row.get("on_time_pct") + "% on-time, " +
+        row.get("completed") + " trips, " + row.get("anomalies") + " anomalies)\n";
+}
+
+zoho.cliq.postToChannel("transportation-ops", leaderboard);
+info "Driver scorecard: " + rankNum + " drivers ranked for week of " + weekStart;
